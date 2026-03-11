@@ -1,3 +1,6 @@
+
+
+
 import { Fragment, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { X, MoveUpRight, Info, Sparkles, ScanFace, Heart, Image as ImageIcon } from 'lucide-react';
@@ -160,8 +163,8 @@ const AnalysisResult = () => {
                 analysis_version: analysisData.analysis_version || '6.0',
                 engine: analysisData.engine || 'AI Analysis',
                 processing_time_ms: Math.round(parseFloat(analysisData.processing_time || 0) * 1000),
-                analysis_data: analysisData,
-                ai_insights: analysisData.ai_insights || analysisData.ai_report || null
+                analysis_data: JSON.stringify(analysisData || {}),
+                ai_insights: JSON.stringify(analysisData.ai_insights || analysisData.ai_report || {})
             };
 
             console.log('💾 Saving to database with complete data...');
@@ -351,7 +354,7 @@ const AnalysisResult = () => {
             sessionId: currentSessionId
         }));
 
-        const fetchAnalysis = async () => {
+        const fetchAnalysis = async (skipValidation = false) => {
             try {
                 // Stage 1: Preparing (0-10%)
                 setLoadingStage('Mempersiapkan analisis...');
@@ -364,7 +367,7 @@ const AnalysisResult = () => {
                 setProgress(20);
                 
                 console.log('🚀 Starting AI-Only Analysis...');
-                const analysisResult = await analyzeSkinWithAI(state.imageBase64);
+                const analysisResult = await analyzeSkinWithAI(state.imageBase64, skipValidation);
                 
                 if (!analysisResult.success) {
                     throw new Error(analysisResult.error || 'Analysis failed');
@@ -435,22 +438,81 @@ const AnalysisResult = () => {
                 console.error('Analysis error:', error);
                 const isInvalidInput = error?.code === 'INVALID_INPUT_QUALITY'
                     || /foto.*(tidak valid|belum layak|invalid)/i.test(String(error?.message || ''));
-                setError(
-                    isInvalidInput
-                        ? (error.message || 'Foto belum valid untuk analisa. Silakan ulangi scan tanpa masker/kacamata dan dengan cahaya cukup.')
-                        : 'Gagal melakukan analisis. Pastikan koneksi internet stabil dan coba lagi.'
-                );
-                setLoading(false);
                 
-                // Auto-redirect after 3 seconds
-                setTimeout(() => {
-                    navigate(isInvalidInput ? '/scan' : '/');
-                }, 3000);
+                // Check if it's a minor quality issue
+                const isMinorQualityIssue = isInvalidInput && (
+                    /slightly|minor|sedikit|ringan/i.test(String(error?.message || ''))
+                );
+                
+                if (isMinorQualityIssue) {
+                    setError({
+                        type: 'minor_quality',
+                        message: error.message || 'Foto memiliki masalah kualitas minor.',
+                        canRetry: true
+                    });
+                } else {
+                    setError(
+                        isInvalidInput
+                            ? (error.message || 'Foto belum valid untuk analisa. Silakan ulangi scan tanpa masker/kacamata dan dengan cahaya cukup.')
+                            : 'Gagal melakukan analisis. Pastikan koneksi internet stabil dan coba lagi.'
+                    );
+                    
+                    // Auto-redirect after 3 seconds for major issues
+                    setTimeout(() => {
+                        navigate(isInvalidInput ? '/scan' : '/');
+                    }, 3000);
+                }
+                
+                setLoading(false);
             }
         };
 
         fetchAnalysis();
     }, [state, navigate]);
+
+    // Retry function for minor quality issues
+    const retryWithRelaxedValidation = async () => {
+        setError(null);
+        setLoading(true);
+        setProgress(0);
+        
+        try {
+            // Stage 1: Preparing (0-10%)
+            setLoadingStage('Mempersiapkan analisis...');
+            setProgress(5);
+            await new Promise(resolve => setTimeout(resolve, 200));
+            setProgress(10);
+
+            // Stage 2: AI Analysis (10-70%) - Direct to Gemini
+            setLoadingStage('🤖 Menganalisis dengan AI Dermatology (Mode Toleran)...');
+            setProgress(20);
+            
+            console.log('🚀 Starting AI-Only Analysis (Skip Validation)...');
+            const analysisResult = await analyzeSkinWithAI(state.imageBase64, true);
+            
+            if (!analysisResult.success) {
+                throw new Error(analysisResult.error || 'Analysis failed');
+            }
+            
+            const analysisData = analysisResult.data;
+            setProgress(60);
+            
+            // Stage 3: Show Overall Score IMMEDIATELY (60-70%)
+            setLoadingStage('Menampilkan hasil...');
+            setResultData(analysisData);
+            setAiInsights(analysisData.ai_insights || analysisData.ai_report);
+            setAnalysisEngine(analysisData.engine);
+            setShowOverallScore(true);
+            setProgress(70);
+            setLoading(false); // Stop loading, show results!
+            
+            console.log('✅ Retry analysis complete');
+        } catch (error) {
+            console.error('Retry analysis error:', error);
+            setError('Gagal melakukan analisis. Pastikan koneksi internet stabil dan coba lagi.');
+            setLoading(false);
+        }
+    };
 
     const DetailedContentWrapper = isGuest ? LockedContent : Fragment;
 
@@ -459,11 +521,55 @@ const AnalysisResult = () => {
 
             {/* Error Toast */}
             {error && (
-                <ErrorToast 
-                    message={error}
-                    onClose={() => setError(null)}
-                    duration={5000}
-                />
+                <div style={{
+                    position: 'fixed',
+                    top: '20px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 9999,
+                    backgroundColor: '#ff4444',
+                    color: 'white',
+                    padding: '16px 20px',
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                    maxWidth: '90vw',
+                    textAlign: 'center'
+                }}>
+                    <div style={{ marginBottom: error?.canRetry ? '12px' : '0' }}>
+                        {typeof error === 'string' ? error : error?.message}
+                    </div>
+                    {error?.canRetry && (
+                        <button
+                            onClick={retryWithRelaxedValidation}
+                            style={{
+                                backgroundColor: 'rgba(255,255,255,0.2)',
+                                border: '1px solid rgba(255,255,255,0.3)',
+                                color: 'white',
+                                padding: '8px 16px',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                marginRight: '8px'
+                            }}
+                        >
+                            🔄 Coba Tetap Analisis
+                        </button>
+                    )}
+                    <button
+                        onClick={() => setError(null)}
+                        style={{
+                            backgroundColor: 'rgba(255,255,255,0.2)',
+                            border: '1px solid rgba(255,255,255,0.3)',
+                            color: 'white',
+                            padding: '8px 16px',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontSize: '14px'
+                        }}
+                    >
+                        ✕ Tutup
+                    </button>
+                </div>
             )}
 
             {/* Fixed Floating Progress Phase - ALWAYS visible (compact mode after loading) */}
@@ -1227,6 +1333,7 @@ const AnalysisResult = () => {
             <BottomNav />
         </div>
     );
+
 };
 
 export default AnalysisResult;

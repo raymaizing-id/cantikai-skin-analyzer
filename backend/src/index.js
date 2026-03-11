@@ -5,7 +5,6 @@
 
 import express from 'express';
 import cors from 'cors';
-import sqlite3 from 'sqlite3';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
@@ -16,6 +15,7 @@ import { fileURLToPath } from 'url';
 import { promises as fsPromises, constants as fsConstants } from 'fs';
 import dotenv from 'dotenv';
 import { saveImageToFile, readImageAsBase64, deleteImageFile } from './utils/imageStorage.js';
+import { pool, dbGet, dbAll, dbRun, testConnection } from './config/database.js';
 // import { scheduleAutoCleanup } from './utils/autoCleanup.js';
 // import { exportToJSON, exportToCSV } from './utils/dataExport.js';
 
@@ -27,6 +27,39 @@ dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 const app = express();
 const PORT = process.env.PORT || 8000;
 const JWT_SECRET = process.env.JWT_SECRET || 'cantik-ai-dev-secret-change-me';
+
+// CORS configuration
+const allowedOrigins = [
+  'https://skin-analyzer.cantik.ai',
+  'https://api.cantik.ai',
+  // Development origins
+  'http://localhost:5173',
+  'http://localhost:5174', 
+  'http://localhost:5175',
+  'http://localhost:5176',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+  'http://127.0.0.1:5175',
+  'http://127.0.0.1:5176'
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // izinkan request tanpa origin (seperti mobile apps atau curl)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true // Penting jika Anda menggunakan cookies/session
+}));
+
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
@@ -36,47 +69,20 @@ const WHATSAPP_WEBHOOK_URL = String(process.env.WHATSAPP_WEBHOOK_URL || '').trim
 const WHATSAPP_WEBHOOK_SECRET = String(process.env.WHATSAPP_WEBHOOK_SECRET || '').trim();
 const UPLOADS_ROOT_PATH = path.resolve(__dirname, '..', '..', 'uploads');
 
-// Database setup with sqlite3
-const configuredDbPath = process.env.DATABASE_PATH || '../database/scripts/cantik_ai.db';
-const dbPath = path.isAbsolute(configuredDbPath)
-    ? configuredDbPath
-    : path.resolve(__dirname, '..', configuredDbPath);
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('❌ Database connection error:', err);
-    } else {
-        console.log('✅ Database connected:', dbPath);
-        // Enable WAL mode for better performance
-        db.run('PRAGMA journal_mode = WAL');
+// Test MySQL connection on startup
+testConnection();
+
+const safeParseJSON = (jsonString, fallback = {}) => {
+    if (!jsonString) return fallback;
+    if (typeof jsonString !== 'string') return jsonString;
+    if (jsonString === '[object Object]') return fallback;
+    
+    try {
+        return JSON.parse(jsonString);
+    } catch (error) {
+        console.warn('Failed to parse JSON:', error);
+        return fallback;
     }
-});
-
-// Helper function to promisify database operations
-const dbGet = (sql, params = []) => {
-    return new Promise((resolve, reject) => {
-        db.get(sql, params, (err, row) => {
-            if (err) reject(err);
-            else resolve(row);
-        });
-    });
-};
-
-const dbAll = (sql, params = []) => {
-    return new Promise((resolve, reject) => {
-        db.all(sql, params, (err, rows) => {
-            if (err) reject(err);
-            else resolve(rows);
-        });
-    });
-};
-
-const dbRun = (sql, params = []) => {
-    return new Promise((resolve, reject) => {
-        db.run(sql, params, function(err) {
-            if (err) reject(err);
-            else resolve({ lastID: this.lastID, changes: this.changes });
-        });
-    });
 };
 
 const sanitizeUser = (user) => {
@@ -1299,10 +1305,43 @@ const requireAdminAuth = (req, res, next) => {
 };
 
 const addColumnIfMissing = async (tableName, columnName, definition) => {
-    const columns = await dbAll(`PRAGMA table_info(${tableName})`);
-    if (!columns.some((col) => col.name === columnName)) {
-        await dbRun(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
-        console.log(`✅ Added column ${tableName}.${columnName}`);
+    try {
+        // Check if column exists in MySQL
+        const columns = await dbAll(`
+            SELECT COLUMN_NAME 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_SCHEMA = DATABASE() 
+            AND TABLE_NAME = ? 
+            AND COLUMN_NAME = ?
+        `, [tableName, columnName]);
+        
+        if (columns.length === 0) {
+            await dbRun(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+            console.log(`✅ Added column ${tableName}.${columnName}`);
+        }
+    } catch (error) {
+        console.warn(`⚠️  Could not add column ${columnName} to ${tableName}:`, error.message);
+    }
+};
+
+const addIndexIfMissing = async (tableName, indexName, columns, unique = false) => {
+    try {
+        // Check if index exists in MySQL
+        const indexes = await dbAll(`
+            SELECT INDEX_NAME 
+            FROM INFORMATION_SCHEMA.STATISTICS 
+            WHERE TABLE_SCHEMA = DATABASE() 
+            AND TABLE_NAME = ? 
+            AND INDEX_NAME = ?
+        `, [tableName, indexName]);
+        
+        if (indexes.length === 0) {
+            const uniqueKeyword = unique ? 'UNIQUE' : '';
+            await dbRun(`CREATE ${uniqueKeyword} INDEX ${indexName} ON ${tableName}(${columns})`);
+            console.log(`✅ Added index ${indexName} on ${tableName}`);
+        }
+    } catch (error) {
+        console.warn(`⚠️  Could not add index ${indexName} to ${tableName}:`, error.message);
     }
 };
 
@@ -1331,9 +1370,10 @@ const ensureAuthSchema = async () => {
     await addColumnIfMissing('banners', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
     await addColumnIfMissing('analyses', 'client_session_id', 'TEXT');
 
-    await dbRun('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)');
-    await dbRun('CREATE INDEX IF NOT EXISTS idx_articles_slug ON articles(slug)');
-    await dbRun('CREATE UNIQUE INDEX IF NOT EXISTS idx_analyses_user_session_unique ON analyses(user_id, client_session_id) WHERE client_session_id IS NOT NULL');
+    await addIndexIfMissing('users', 'idx_users_google_id', 'google_id', true);
+    await addIndexIfMissing('articles', 'idx_articles_slug', 'slug');
+    // Note: MySQL doesn't support partial indexes like SQLite's WHERE clause
+    // await addIndexIfMissing('analyses', 'idx_analyses_user_session_unique', 'user_id, client_session_id', true);
 
     // Cleanup legacy duplicate analyses (same user + same created_at second, keep newest)
     const duplicateAnalyses = await dbAll(`
@@ -1342,7 +1382,7 @@ const ensureAuthSchema = async () => {
         INNER JOIN (
             SELECT user_id, created_at, MAX(id) AS keep_id
             FROM analyses
-            WHERE client_session_id IS NULL AND COALESCE(is_deleted, 0) = 0
+            WHERE client_session_id IS NULL AND IFNULL(is_deleted, 0) = 0
             GROUP BY user_id, created_at
             HAVING COUNT(*) > 1
         ) d ON d.user_id = a.user_id AND d.created_at = a.created_at
@@ -1357,61 +1397,8 @@ const ensureAuthSchema = async () => {
         await dbRun(`DELETE FROM analyses WHERE id IN (${placeholders})`, duplicateAnalyses.map((row) => row.id));
     }
 
-    await dbRun(`
-        CREATE TABLE IF NOT EXISTS app_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            value_type TEXT DEFAULT 'string',
-            category TEXT DEFAULT 'general',
-            description TEXT,
-            is_public INTEGER DEFAULT 0,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-
-    await dbRun(`
-        CREATE TABLE IF NOT EXISTS kiosk_sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_uuid TEXT UNIQUE NOT NULL,
-            device_id TEXT,
-            visitor_name TEXT NOT NULL,
-            gender TEXT NOT NULL,
-            whatsapp TEXT,
-            status TEXT DEFAULT 'started',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP
-        )
-    `);
-
-    await dbRun(`
-        CREATE TABLE IF NOT EXISTS kiosk_analyses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id INTEGER NOT NULL,
-            result_token TEXT UNIQUE NOT NULL,
-            image_url TEXT,
-            visualization_url TEXT,
-            overall_score REAL DEFAULT 0,
-            skin_type TEXT,
-            fitzpatrick_type TEXT,
-            predicted_age INTEGER,
-            analysis_version TEXT,
-            engine TEXT,
-            processing_time_ms INTEGER,
-            cv_metrics TEXT,
-            vision_analysis TEXT,
-            ai_insights TEXT,
-            product_recommendations TEXT,
-            skincare_routine TEXT,
-            result_summary TEXT,
-            delivery_status TEXT DEFAULT 'pending',
-            delivery_channel TEXT,
-            delivered_at TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            expires_at TIMESTAMP,
-            FOREIGN KEY (session_id) REFERENCES kiosk_sessions(id) ON DELETE CASCADE
-        )
-    `);
+    // Tables are now created by init-database.js script
+    console.log('✅ Database schema validation complete');
 
     await addColumnIfMissing('kiosk_sessions', 'device_id', 'TEXT');
     await addColumnIfMissing('kiosk_sessions', 'visitor_name', "TEXT NOT NULL DEFAULT 'Guest'");
@@ -1449,11 +1436,11 @@ const ensureAuthSchema = async () => {
         await dbRun(`DELETE FROM kiosk_analyses WHERE id IN (${placeholders})`, duplicateRows.map((row) => row.id));
     }
 
-    await dbRun('CREATE UNIQUE INDEX IF NOT EXISTS idx_kiosk_sessions_uuid ON kiosk_sessions(session_uuid)');
-    await dbRun('CREATE UNIQUE INDEX IF NOT EXISTS idx_kiosk_analyses_token ON kiosk_analyses(result_token)');
-    await dbRun('CREATE UNIQUE INDEX IF NOT EXISTS idx_kiosk_analyses_session_unique ON kiosk_analyses(session_id)');
-    await dbRun('CREATE INDEX IF NOT EXISTS idx_kiosk_analyses_session_id ON kiosk_analyses(session_id)');
-    await dbRun('CREATE INDEX IF NOT EXISTS idx_kiosk_analyses_created_at ON kiosk_analyses(created_at)');
+    await addIndexIfMissing('kiosk_sessions', 'idx_kiosk_sessions_uuid', 'session_uuid', true);
+    await addIndexIfMissing('kiosk_analyses', 'idx_kiosk_analyses_token', 'result_token', true);
+    await addIndexIfMissing('kiosk_analyses', 'idx_kiosk_analyses_session_unique', 'session_id', true);
+    await addIndexIfMissing('kiosk_analyses', 'idx_kiosk_analyses_session_id', 'session_id');
+    await addIndexIfMissing('kiosk_analyses', 'idx_kiosk_analyses_created_at', 'created_at');
 
     const defaultSettings = [
         {
@@ -1531,9 +1518,9 @@ const ensureAuthSchema = async () => {
     ];
 
     const insertSettingStmt = `
-        INSERT INTO app_settings (key, value, value_type, category, description, is_public)
+        INSERT INTO app_settings (\`key\`, \`value\`, value_type, category, description, is_public)
         VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(key) DO NOTHING
+        ON DUPLICATE KEY UPDATE \`key\` = \`key\`
     `;
 
     for (const setting of defaultSettings) {
@@ -1592,26 +1579,7 @@ const ensureAuthSchema = async () => {
     }
 };
 
-// Middleware
-const allowedOrigins = new Set([
-    process.env.FRONTEND_URL || 'http://localhost:5173',
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://localhost:5175',
-    'http://localhost:5176'
-]);
-
-const isAllowedOrigin = (origin) => Boolean(origin) && (allowedOrigins.has(origin) || origin.startsWith('http://localhost:'));
-
-app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin || isAllowedOrigin(origin)) {
-            return callback(null, true);
-        }
-        return callback(new Error(`Origin ${origin} is not allowed by CORS`));
-    },
-    credentials: true
-}));
+// Middleware sudah dikonfigurasi di atas, tidak perlu duplikat
 
 app.use('/api/v2/admin', (req, res, next) => {
     if (!ADMIN_ENFORCE_ORIGIN || req.method === 'OPTIONS') {
@@ -1686,7 +1654,7 @@ app.get('/', (req, res) => {
 app.get('/api/v2/settings/public', async (req, res) => {
     try {
         const rows = await dbAll(
-            'SELECT key, value, value_type, category, description, is_public, updated_at FROM app_settings WHERE is_public = 1 ORDER BY category, key'
+            'SELECT `key`, `value`, value_type, category, description, is_public, updated_at FROM app_settings WHERE is_public = 1 ORDER BY category, `key`'
         );
 
         const settings = rows.map(normalizeSettingRow);
@@ -2035,16 +2003,36 @@ app.put('/api/v2/users/:id', requireAuthenticatedUser, async (req, res) => {
         const updates = [];
         const values = [];
         
-        if (name !== undefined) { updates.push('name = ?'); values.push(name); }
-        if (age !== undefined) { updates.push('age = ?'); values.push(age); }
-        if (gender !== undefined) { updates.push('gender = ?'); values.push(gender); }
-        if (skin_type !== undefined) { updates.push('skin_type = ?'); values.push(skin_type); }
+        if (name !== undefined && name !== '') { 
+            updates.push('name = ?'); 
+            values.push(name); 
+        }
+        if (age !== undefined) { 
+            // Handle empty string or invalid age values
+            let ageValue = null;
+            if (age !== '' && age !== null && !isNaN(Number(age))) {
+                ageValue = Number(age);
+            }
+            updates.push('age = ?'); 
+            values.push(ageValue); 
+        }
+        if (gender !== undefined) { 
+            // Handle empty string for gender
+            const genderValue = (gender === '' || gender === null) ? null : gender;
+            updates.push('gender = ?'); 
+            values.push(genderValue); 
+        }
+        if (skin_type !== undefined && skin_type !== '') { 
+            updates.push('skin_type = ?'); 
+            values.push(skin_type); 
+        }
         if (password !== undefined) {
             updates.push('password = ?');
             values.push('');
             updates.push('password_hash = ?');
             values.push(bcrypt.hashSync(password, 10));
-            updates.push("auth_provider = COALESCE(auth_provider, 'email')");
+            updates.push('auth_provider = IFNULL(auth_provider, ?)');
+            values.push('email');
         }
 
         if (updates.length === 0) {
@@ -2127,15 +2115,15 @@ app.post('/api/v2/analysis/save', async (req, res) => {
             const existing = await dbGet(
                 `SELECT *
                  FROM analyses
-                 WHERE user_id = ? AND client_session_id = ? AND COALESCE(is_deleted, 0) = 0
+                 WHERE user_id = ? AND client_session_id = ? AND IFNULL(is_deleted, 0) = 0
                  ORDER BY id DESC
                  LIMIT 1`,
                 [user_id, normalizedSessionId]
             );
             if (existing) {
-                if (existing.cv_metrics) existing.cv_metrics = JSON.parse(existing.cv_metrics);
-                if (existing.vision_analysis) existing.vision_analysis = JSON.parse(existing.vision_analysis);
-                if (existing.ai_insights) existing.ai_insights = JSON.parse(existing.ai_insights);
+                if (existing.cv_metrics) existing.cv_metrics = safeParseJSON(existing.cv_metrics, {});
+                if (existing.vision_analysis) existing.vision_analysis = safeParseJSON(existing.vision_analysis, {});
+                if (existing.ai_insights) existing.ai_insights = safeParseJSON(existing.ai_insights, {});
                 return res.json(existing);
             }
         }
@@ -2151,21 +2139,66 @@ app.post('/api/v2/analysis/save', async (req, res) => {
             console.log('✅ Visualization image saved to:', visualizationPath);
         }
         
-        // Extract data from analysis_data
-        const cvMetrics = analysis_data?.cv_metrics || analysis_data?.metrics || {};
-        const visionAnalysis = analysis_data?.vision_analysis || analysis_data?.vision || analysis_data || {};
+        // Extract data from analysis_data (handle if already stringified)
+        let analysisDataObj = analysis_data;
+        if (typeof analysis_data === 'string') {
+            try {
+                analysisDataObj = JSON.parse(analysis_data);
+            } catch {
+                analysisDataObj = {};
+            }
+        }
+        
+        const cvMetrics = analysisDataObj?.cv_metrics || analysisDataObj?.metrics || {};
+        const visionAnalysis = analysisDataObj?.vision_analysis || analysisDataObj?.vision || analysisDataObj || {};
         
         // Extract additional fields from analysis_data if not provided directly
-        const finalFitzpatrickType = fitzpatrick_type || analysis_data?.fitzpatrick_type || visionAnalysis?.fitzpatrick_type || 'III';
+        const finalFitzpatrickType = fitzpatrick_type || analysisDataObj?.fitzpatrick_type || visionAnalysis?.fitzpatrick_type || 'III';
         const finalPredictedAge = predicted_age || 
-                                  analysis_data?.predicted_age || 
+                                  analysisDataObj?.predicted_age || 
                                   visionAnalysis?.age_prediction?.predicted_age || 
-                                  analysis_data?.age_prediction?.predicted_age || 
+                                  analysisDataObj?.age_prediction?.predicted_age || 
                                   25;
-        const finalAnalysisVersion = analysis_version || analysis_data?.analysis_version || '6.0';
-        const finalEngine = engine || analysis_data?.engine || 'AI Analysis';
-        const finalProcessingTime = processing_time_ms || analysis_data?.processing_time_ms || analysis_data?.processing_time || 0;
+        const finalAnalysisVersion = analysis_version || analysisDataObj?.analysis_version || '6.0';
+        const finalEngine = engine || analysisDataObj?.engine || 'AI Analysis';
+        const finalProcessingTime = processing_time_ms || analysisDataObj?.processing_time_ms || analysisDataObj?.processing_time || 0;
         
+        // Safe JSON stringify function - handle already stringified data
+        const safeStringify = (obj) => {
+            try {
+                if (typeof obj === 'string') {
+                    // Check if it's already a valid JSON string
+                    if (obj === '[object Object]') {
+                        return JSON.stringify({});
+                    }
+                    try {
+                        // If it's already valid JSON, return as is
+                        JSON.parse(obj);
+                        return obj;
+                    } catch {
+                        // If parsing fails, it's a plain string, wrap in quotes
+                        return JSON.stringify(obj);
+                    }
+                }
+                if (obj === null || obj === undefined) {
+                    return JSON.stringify({});
+                }
+                return JSON.stringify(obj);
+            } catch (error) {
+                console.warn('JSON stringify error:', error);
+                return JSON.stringify({});
+            }
+        };
+
+        // Handle analysis_data and ai_insights that might already be stringified
+        const processAnalysisField = (field) => {
+            if (typeof field === 'string') {
+                // Already stringified from frontend
+                return field === '[object Object]' ? JSON.stringify({}) : field;
+            }
+            return safeStringify(field);
+        };
+
         const result = await dbRun(`
             INSERT INTO analyses (
                 user_id, image_url, visualization_url, overall_score, skin_type,
@@ -2184,9 +2217,9 @@ app.post('/api/v2/analysis/save', async (req, res) => {
             finalAnalysisVersion,
             finalEngine,
             finalProcessingTime,
-            JSON.stringify(cvMetrics),
-            JSON.stringify(visionAnalysis),
-            JSON.stringify(ai_insights || {}),
+            safeStringify(cvMetrics),
+            safeStringify(visionAnalysis),
+            processAnalysisField(ai_insights),
             normalizedSessionId
         ]);
         savedAnalysisId = result.lastID;
@@ -2195,10 +2228,16 @@ app.post('/api/v2/analysis/save', async (req, res) => {
         
         const analysis = await dbGet('SELECT * FROM analyses WHERE id = ?', [result.lastID]);
         
-        // Parse JSON fields
-        if (analysis.cv_metrics) analysis.cv_metrics = JSON.parse(analysis.cv_metrics);
-        if (analysis.vision_analysis) analysis.vision_analysis = JSON.parse(analysis.vision_analysis);
-        if (analysis.ai_insights) analysis.ai_insights = JSON.parse(analysis.ai_insights);
+        // Parse JSON fields with better error handling
+        if (analysis.cv_metrics) {
+            analysis.cv_metrics = safeParseJSON(analysis.cv_metrics, {});
+        }
+        if (analysis.vision_analysis) {
+            analysis.vision_analysis = safeParseJSON(analysis.vision_analysis, {});
+        }
+        if (analysis.ai_insights) {
+            analysis.ai_insights = safeParseJSON(analysis.ai_insights, {});
+        }
         
         res.json(analysis);
     } catch (error) {
@@ -2214,15 +2253,15 @@ app.post('/api/v2/analysis/save', async (req, res) => {
                     const existing = await dbGet(
                         `SELECT *
                          FROM analyses
-                         WHERE user_id = ? AND client_session_id = ? AND COALESCE(is_deleted, 0) = 0
+                         WHERE user_id = ? AND client_session_id = ? AND IFNULL(is_deleted, 0) = 0
                          ORDER BY id DESC
                          LIMIT 1`,
                         [user_id, normalizedSessionId]
                     );
                     if (existing) {
-                        if (existing.cv_metrics) existing.cv_metrics = JSON.parse(existing.cv_metrics);
-                        if (existing.vision_analysis) existing.vision_analysis = JSON.parse(existing.vision_analysis);
-                        if (existing.ai_insights) existing.ai_insights = JSON.parse(existing.ai_insights);
+                        if (existing.cv_metrics) existing.cv_metrics = safeParseJSON(existing.cv_metrics, {});
+                        if (existing.vision_analysis) existing.vision_analysis = safeParseJSON(existing.vision_analysis, {});
+                        if (existing.ai_insights) existing.ai_insights = safeParseJSON(existing.ai_insights, {});
                         return res.json(existing);
                     }
                 }
@@ -2245,11 +2284,11 @@ app.get('/api/v2/analysis/history/:userId', async (req, res) => {
         
         // Parse JSON fields and convert image paths to base64
         analyses.forEach(analysis => {
-            if (analysis.cv_metrics) analysis.cv_metrics = JSON.parse(analysis.cv_metrics);
-            if (analysis.vision_analysis) analysis.vision_analysis = JSON.parse(analysis.vision_analysis);
-            if (analysis.ai_insights) analysis.ai_insights = JSON.parse(analysis.ai_insights);
-            if (analysis.product_recommendations) analysis.product_recommendations = JSON.parse(analysis.product_recommendations);
-            if (analysis.skincare_routine) analysis.skincare_routine = JSON.parse(analysis.skincare_routine);
+            if (analysis.cv_metrics) analysis.cv_metrics = safeParseJSON(analysis.cv_metrics, {});
+            if (analysis.vision_analysis) analysis.vision_analysis = safeParseJSON(analysis.vision_analysis, {});
+            if (analysis.ai_insights) analysis.ai_insights = safeParseJSON(analysis.ai_insights, {});
+            if (analysis.product_recommendations) analysis.product_recommendations = safeParseJSON(analysis.product_recommendations, []);
+            if (analysis.skincare_routine) analysis.skincare_routine = safeParseJSON(analysis.skincare_routine, {});
             
             // Convert image paths to base64 for frontend
             if (analysis.image_url && !analysis.image_url.startsWith('data:')) {
@@ -2286,11 +2325,11 @@ app.get('/api/v2/analysis/:id', async (req, res) => {
         }
         
         // Parse JSON fields
-        if (analysis.cv_metrics) analysis.cv_metrics = JSON.parse(analysis.cv_metrics);
-        if (analysis.vision_analysis) analysis.vision_analysis = JSON.parse(analysis.vision_analysis);
-        if (analysis.ai_insights) analysis.ai_insights = JSON.parse(analysis.ai_insights);
-        if (analysis.product_recommendations) analysis.product_recommendations = JSON.parse(analysis.product_recommendations);
-        if (analysis.skincare_routine) analysis.skincare_routine = JSON.parse(analysis.skincare_routine);
+        if (analysis.cv_metrics) analysis.cv_metrics = safeParseJSON(analysis.cv_metrics, {});
+        if (analysis.vision_analysis) analysis.vision_analysis = safeParseJSON(analysis.vision_analysis, {});
+        if (analysis.ai_insights) analysis.ai_insights = safeParseJSON(analysis.ai_insights, {});
+        if (analysis.product_recommendations) analysis.product_recommendations = safeParseJSON(analysis.product_recommendations, []);
+        if (analysis.skincare_routine) analysis.skincare_routine = safeParseJSON(analysis.skincare_routine, {});
         
         // Convert image paths to base64 for frontend
         if (analysis.image_url && !analysis.image_url.startsWith('data:')) {
@@ -3447,11 +3486,8 @@ const parseAnalysisJSONFields = (analysis) => {
     const fields = ['cv_metrics', 'vision_analysis', 'ai_insights', 'product_recommendations', 'skincare_routine'];
     fields.forEach((field) => {
         if (analysis[field] && typeof analysis[field] === 'string') {
-            try {
-                analysis[field] = JSON.parse(analysis[field]);
-            } catch {
-                // Keep original raw value if parsing fails
-            }
+            const fallback = ['product_recommendations'].includes(field) ? [] : {};
+            analysis[field] = safeParseJSON(analysis[field], fallback);
         }
     });
     return analysis;
@@ -4240,11 +4276,11 @@ app.get('/api/v2/admin/settings', requireAdminAuth, async (req, res) => {
         const category = req.query.category ? String(req.query.category).trim() : null;
         const rows = category
             ? await dbAll(
-                'SELECT key, value, value_type, category, description, is_public, updated_at FROM app_settings WHERE category = ? ORDER BY key',
+                'SELECT `key`, `value`, value_type, category, description, is_public, updated_at FROM app_settings WHERE category = ? ORDER BY `key`',
                 [category]
             )
             : await dbAll(
-                'SELECT key, value, value_type, category, description, is_public, updated_at FROM app_settings ORDER BY category, key'
+                'SELECT `key`, `value`, value_type, category, description, is_public, updated_at FROM app_settings ORDER BY category, `key`'
             );
 
         const settings = rows.map(normalizeSettingRow);
@@ -4275,15 +4311,15 @@ app.put('/api/v2/admin/settings/:key', requireAdminAuth, async (req, res) => {
         const persistedValue = valueType === 'json' ? JSON.stringify(rawValue) : String(rawValue);
 
         await dbRun(`
-            INSERT INTO app_settings (key, value, value_type, category, description, is_public, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(key) DO UPDATE SET
-                value = excluded.value,
-                value_type = excluded.value_type,
-                category = excluded.category,
-                description = excluded.description,
-                is_public = excluded.is_public,
-                updated_at = CURRENT_TIMESTAMP
+            INSERT INTO app_settings (\`key\`, \`value\`, value_type, category, description, is_public, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, NOW())
+            ON DUPLICATE KEY UPDATE
+                \`value\` = VALUES(\`value\`),
+                value_type = VALUES(value_type),
+                category = VALUES(category),
+                description = VALUES(description),
+                is_public = VALUES(is_public),
+                updated_at = NOW()
         `, [
             key,
             persistedValue,
@@ -4294,7 +4330,7 @@ app.put('/api/v2/admin/settings/:key', requireAdminAuth, async (req, res) => {
         ]);
 
         const row = await dbGet(
-            'SELECT key, value, value_type, category, description, is_public, updated_at FROM app_settings WHERE key = ?',
+            'SELECT `key`, `value`, value_type, category, description, is_public, updated_at FROM app_settings WHERE `key` = ?',
             [key]
         );
         res.json({ success: true, setting: normalizeSettingRow(row) });
@@ -4318,15 +4354,15 @@ app.post('/api/v2/admin/settings/bulk', requireAdminAuth, async (req, res) => {
             const persistedValue = valueType === 'json' ? JSON.stringify(item.value) : String(item.value);
 
             await dbRun(`
-                INSERT INTO app_settings (key, value, value_type, category, description, is_public, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(key) DO UPDATE SET
-                    value = excluded.value,
-                    value_type = excluded.value_type,
-                    category = excluded.category,
-                    description = excluded.description,
-                    is_public = excluded.is_public,
-                    updated_at = CURRENT_TIMESTAMP
+                INSERT INTO app_settings (\`key\`, \`value\`, value_type, category, description, is_public, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, NOW())
+                ON DUPLICATE KEY UPDATE
+                    \`value\` = VALUES(\`value\`),
+                    value_type = VALUES(value_type),
+                    category = VALUES(category),
+                    description = VALUES(description),
+                    is_public = VALUES(is_public),
+                    updated_at = NOW()
             `, [
                 item.key,
                 persistedValue,
@@ -4347,7 +4383,7 @@ app.post('/api/v2/admin/settings/bulk', requireAdminAuth, async (req, res) => {
 // Delete setting (admin)
 app.delete('/api/v2/admin/settings/:key', requireAdminAuth, async (req, res) => {
     try {
-        await dbRun('DELETE FROM app_settings WHERE key = ?', [req.params.key]);
+        await dbRun('DELETE FROM app_settings WHERE `key` = ?', [req.params.key]);
         res.json({ success: true, deletedKey: req.params.key });
     } catch (error) {
         console.error('Delete admin setting error:', error);
@@ -4381,16 +4417,11 @@ app.get('/api/v2/admin/database/summary', requireAdminAuth, async (req, res) => 
         }
 
         let dbSizeBytes = 0;
-        try {
-            const fs = await import('fs/promises');
-            const stat = await fs.stat(dbPath);
-            dbSizeBytes = stat.size;
-        } catch {
-            dbSizeBytes = 0;
-        }
+        // MySQL doesn't have a single file size, skip this for now
+        dbSizeBytes = 0;
 
         res.json({
-            path: dbPath,
+            path: `MySQL - ${process.env.DB_NAME}@${process.env.DB_HOST}:${process.env.DB_PORT}`,
             size_bytes: dbSizeBytes,
             table_counts: tableCounts,
             admin_require_bearer: ADMIN_REQUIRE_BEARER,
@@ -4434,7 +4465,18 @@ app.get('/api/v2/admin/database/schema/:table', requireAdminAuth, async (req, re
         if (!ADMIN_QUERYABLE_TABLES.includes(table)) {
             return res.status(400).json({ error: `Table ${table} is not allowed` });
         }
-        const schema = await dbAll(`PRAGMA table_info(${table})`);
+        const schema = await dbAll(`
+            SELECT 
+                COLUMN_NAME as name,
+                DATA_TYPE as type,
+                IS_NULLABLE as notnull,
+                COLUMN_DEFAULT as dflt_value,
+                CASE WHEN COLUMN_KEY = 'PRI' THEN 1 ELSE 0 END as pk
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_SCHEMA = DATABASE() 
+            AND TABLE_NAME = ?
+            ORDER BY ORDINAL_POSITION
+        `, [table]);
         res.json({ table, schema });
     } catch (error) {
         console.error('Get admin table schema error:', error);
@@ -4498,10 +4540,14 @@ const isExistingCantikBackendRunning = async (port) => {
     }
 };
 
-const closeDatabaseSilently = () => {
-    return new Promise((resolve) => {
-        db.close(() => resolve());
-    });
+const closeDatabaseSilently = async () => {
+    try {
+        if (pool) {
+            await pool.end();
+        }
+    } catch (error) {
+        // Silent close
+    }
 };
 
 const handleListenError = async (error) => {
@@ -4529,10 +4575,10 @@ const startServer = async () => {
         const server = app.listen(PORT);
 
         server.on('listening', () => {
-            console.log('🚀 Cantik AI Backend Started! (sqlite3 version)');
+            console.log('🚀 Cantik AI Backend Started! (MySQL version)');
             console.log(`📍 Server: http://localhost:${PORT}`);
             console.log(`🏥 Health: http://localhost:${PORT}/health`);
-            console.log(`📊 Database: ${dbPath}`);
+            console.log(`📊 Database: MySQL - ${process.env.DB_NAME}@${process.env.DB_HOST}`);
             console.log('✅ Ready to accept requests');
 
             // Schedule auto-cleanup (delete analyses older than 30 days, run every 24 hours)
@@ -4555,12 +4601,15 @@ const startServer = async () => {
 startServer();
 
 // Graceful shutdown
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
     console.log('\n👋 Shutting down gracefully...');
-    db.close((err) => {
-        if (err) {
-            console.error('Error closing database:', err);
+    try {
+        if (pool) {
+            await pool.end();
+            console.log('✅ Database connection closed');
         }
-        process.exit(0);
-    });
+    } catch (error) {
+        console.error('Error closing database:', error);
+    }
+    process.exit(0);
 });

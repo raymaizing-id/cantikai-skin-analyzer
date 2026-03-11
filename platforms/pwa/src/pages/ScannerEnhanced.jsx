@@ -221,9 +221,44 @@ const ScannerEnhanced = () => {
 
         return () => {
             isComponentMounted = false;
-            if (cameraInstance) cameraInstance.stop();
-            if (faceMesh) faceMesh.close();
-            if (qualityCheckInterval) clearInterval(qualityCheckInterval);
+            
+            // Stop camera with better cleanup
+            if (cameraInstance) {
+                try {
+                    cameraInstance.stop();
+                    cameraInstance = null;
+                } catch (error) {
+                    console.warn('Error stopping camera:', error);
+                }
+            }
+            
+            // Close MediaPipe
+            if (faceMesh) {
+                try {
+                    faceMesh.close();
+                    faceMesh = null;
+                } catch (error) {
+                    console.warn('Error closing faceMesh:', error);
+                }
+            }
+            
+            // Stop video stream directly
+            if (videoRef.current && videoRef.current.srcObject) {
+                const stream = videoRef.current.srcObject;
+                if (stream && stream.getTracks) {
+                    stream.getTracks().forEach(track => {
+                        track.stop();
+                    });
+                }
+                videoRef.current.srcObject = null;
+            }
+            
+            // Clear intervals
+            if (qualityCheckInterval) {
+                clearInterval(qualityCheckInterval);
+                qualityCheckInterval = null;
+            }
+            
             stopCountdown();
         };
     }, [facingMode]); // Only re-run when camera flips

@@ -21,10 +21,10 @@ const INVALID_QUALITY_KEYWORDS = [
     'masker',
     'kacamata',
     'glasses',
-    'gelap',
-    'dark',
-    'blur',
-    'buram',
+    'very dark',
+    'sangat gelap',
+    'severely blurred',
+    'sangat buram',
     'non-face',
     'non face',
     'animal',
@@ -32,7 +32,9 @@ const INVALID_QUALITY_KEYWORDS = [
     'object',
     'bukan wajah',
     'multiple face',
-    'lebih dari satu wajah'
+    'lebih dari satu wajah',
+    'completely dark',
+    'totally blurred'
 ];
 
 const collectQualityIssues = (qualityCheck = {}) => {
@@ -48,6 +50,13 @@ const ensureVisionInputValidity = (visionResult = {}) => {
     const issues = collectQualityIssues(qualityCheck);
     const issuesText = issues.join(' ').toLowerCase();
 
+    console.log('🔍 Photo validation check:', {
+        issues,
+        qualityValid: qualityCheck?.is_valid,
+        faceDetected: metrics?.face_detected,
+        confidence: metrics?.confidence
+    });
+
     const qualityValid = qualityCheck?.is_valid !== false;
     const faceDetected = metrics?.face_detected !== false;
     const subjectType = String(metrics?.subject_type || 'human_face').toLowerCase();
@@ -55,26 +64,46 @@ const ensureVisionInputValidity = (visionResult = {}) => {
     const lighting = String(metrics?.lighting || '').toLowerCase();
     const sharpness = String(metrics?.sharpness || '').toLowerCase();
     const confidence = Number(metrics?.confidence ?? 0.85);
+    
+    // More tolerant validation - only block severe issues
     const hasInvalidKeyword = INVALID_QUALITY_KEYWORDS.some((keyword) => issuesText.includes(keyword));
     const blockedByHardRule = ['animal', 'object', 'animation', 'unknown', 'non_face', 'non-face'].includes(subjectType)
         || faceCount !== 1
-        || ['dark', 'dim', 'overexposed'].includes(lighting)
-        || sharpness === 'blurry'
-        || confidence < 0.5
+        || lighting === 'completely_dark' // Only block completely dark, not slightly underexposed
+        || sharpness === 'severely_blurred' // Only block severe blur, not minor blur
+        || confidence < 0.3 // Lower threshold, more tolerant
         || hasInvalidKeyword;
 
+    // Only throw error for truly invalid photos
     if (!qualityValid || !faceDetected || blockedByHardRule) {
-        const reasonText = issues.length > 0
-            ? issues.slice(0, 4).join(' | ')
+        // Filter out minor issues from error message
+        const majorIssues = issues.filter(issue => {
+            const lowerIssue = issue.toLowerCase();
+            return !lowerIssue.includes('slightly') && 
+                   !lowerIssue.includes('minor') && 
+                   !lowerIssue.includes('sedikit') &&
+                   !lowerIssue.includes('ringan');
+        });
+        
+        console.log('⚠️ Photo validation - Major issues found:', majorIssues);
+        
+        const reasonText = majorIssues.length > 0
+            ? majorIssues.slice(0, 3).join(' | ')
             : 'Foto tidak valid untuk analisa kulit akurat.';
-        const error = new Error(`Foto belum layak dianalisa. ${reasonText}`);
-        error.code = 'INVALID_INPUT_QUALITY';
-        error.details = {
-            quality_check: qualityCheck,
-            issues
-        };
-        throw error;
+            
+        // Only throw if there are major issues
+        if (majorIssues.length > 0) {
+            const error = new Error(`Foto belum layak dianalisa. ${reasonText}`);
+            error.code = 'INVALID_INPUT_QUALITY';
+            error.details = {
+                quality_check: qualityCheck,
+                issues: majorIssues
+            };
+            throw error;
+        }
     }
+    
+    console.log('✅ Photo validation passed - proceeding with analysis');
 };
 
 /**
@@ -83,16 +112,17 @@ const ensureVisionInputValidity = (visionResult = {}) => {
  * 1. Gemini Vision → Analyze image
  * 2. GPT-OSS-20B → Generate complete report
  * @param {string} imageBase64 - Base64 encoded image
+ * @param {boolean} skipValidation - Skip strict photo validation (default: false)
  * @returns {Promise<Object>} Complete analysis results
  */
-export const analyzeSkinWithAI = async (imageBase64) => {
+export const analyzeSkinWithAI = async (imageBase64, skipValidation = false) => {
     try {
         console.log('🚀 Starting AI-Only Skin Analysis (2 calls only)...');
         const startTime = Date.now();
 
         // Step 1: Gemini Vision - Comprehensive skin analysis from image
         console.log('👁️ Step 1: Gemini Vision Analysis...');
-        const visionResults = await analyzeWithGeminiVision(imageBase64);
+        const visionResults = await analyzeWithGeminiVision(imageBase64, skipValidation);
         console.log('✅ Vision analysis complete');
 
         // Step 2: Groq Text - Generate complete report (1x call for everything)
@@ -150,7 +180,7 @@ export const analyzeSkinWithAI = async (imageBase64) => {
  * Gemini Vision: Comprehensive skin analysis from image
  * Focus: Extract visual data only, no recommendations
  */
-async function analyzeWithGeminiVision(imageBase64) {
+async function analyzeWithGeminiVision(imageBase64, skipValidation = false) {
     const base64Data = imageBase64.includes(',') 
         ? imageBase64.split(',')[1] 
         : imageBase64;
@@ -366,8 +396,34 @@ Output MUST be valid JSON without markdown or extra text.`;
     
     try {
         const parsed = JSON.parse(textContent);
-        ensureVisionInputValidity(parsed);
-        console.log('✅ Gemini Vision JSON parsed successfully');
+        
+        // Try validation first (unless skipped)
+        if (!skipValidation) {
+            try {
+                ensureVisionInputValidity(parsed);
+                console.log('✅ Gemini Vision JSON parsed successfully');
+            } catch (validationError) {
+                // Check if validation failed due to minor issues only
+                const errorMessage = validationError.message || '';
+                const hasOnlyMinorIssues = errorMessage.includes('Slightly') || 
+                                         errorMessage.includes('Minor') ||
+                                         errorMessage.includes('sedikit') ||
+                                         errorMessage.includes('ringan');
+                
+                if (hasOnlyMinorIssues) {
+                    console.log('⚠️ Minor quality issues detected, but proceeding with analysis');
+                    console.log('Issues:', errorMessage);
+                    // Add a warning flag but continue processing
+                    parsed.quality_warning = errorMessage;
+                } else {
+                    // Re-throw for major issues only
+                    throw validationError;
+                }
+            }
+        } else {
+            console.log('⚠️ Photo validation skipped - proceeding with analysis');
+        }
+        
         return parsed;
     } catch (parseError) {
         if (parseError?.code === 'INVALID_INPUT_QUALITY') {

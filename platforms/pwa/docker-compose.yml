@@ -1,0 +1,7 @@
+services:
+  frontend-pwa:
+    build: .
+    container_name: cantik-fe-pwa
+    ports:
+      - "3001:80"
+    restart: always
