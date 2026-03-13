@@ -922,10 +922,10 @@ const AnalysisResult = () => {
                                             <p style={{ fontSize: TYPOGRAPHY.tiny, color: 'var(--text-body)', marginBottom: '2px' }}>Jenis Kulit</p>
                                             <p style={{ fontSize: TYPOGRAPHY.small, fontWeight: 600, color: 'var(--text-headline)', margin: 0 }}>{resultData?.skin_type || "Normal"}</p>
                                         </div>
-                                        <div style={{ background: 'rgba(255,255,255,0.6)', borderRadius: '10px', padding: '8px 12px', flex: '1 1 auto', minWidth: '120px' }}>
-                                            <p style={{ fontSize: TYPOGRAPHY.tiny, color: 'var(--text-body)', marginBottom: '2px' }}>Usia Kulit</p>
-                                            <p style={{ fontSize: TYPOGRAPHY.small, fontWeight: 600, color: 'var(--text-headline)', margin: 0 }}>{resultData?.age_prediction?.predicted_age || 25} tahun</p>
-                                        </div>
+                                        {/* <div style={{ background: 'rgba(255,255,255,0.6)', borderRadius: '10px', padding: '8px 12px', flex: '1 1 auto', minWidth: '120px' }}>
+                                            <p style={{ fontSize: TYPOGRAPHY.tiny, color: 'var(--text-body)', marginBottom: '2px' }}>Jenis Kulit</p>
+                                            <p style={{ fontSize: TYPOGRAPHY.small, fontWeight: 600, color: 'var(--text-headline)', margin: 0 }}>{resultData?.skin_type || 'Normal'}</p>
+                                        </div> */}
                                     </div>
                                     
                                     {/* Priority Concerns - COMPACT */}
@@ -1080,9 +1080,9 @@ const AnalysisResult = () => {
                                                     </p>
                                                 </div>
                                                 <div style={{ background: 'rgba(255,255,255,0.6)', borderRadius: '12px', padding: '12px', borderLeft: '3px solid var(--primary-color)' }}>
-                                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-body)', marginBottom: '4px', fontWeight: 500 }}>Usia Kulit</p>
+                                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-body)', marginBottom: '4px', fontWeight: 500 }}>Jenis Kulit</p>
                                                     <p style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-headline)', margin: 0, fontFamily: 'var(--font-sans)' }}>
-                                                        {resultData?.age_prediction?.predicted_age || 25} tahun
+                                                        {resultData?.skin_type || 'Normal'}
                                                     </p>
                                                 </div>
                                                 

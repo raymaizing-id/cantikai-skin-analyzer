@@ -372,21 +372,13 @@ const History = () => {
                                                 })}
                                             </span>
                                         </div>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                             <div>
                                                 <p style={{ fontSize: '0.75rem', color: 'var(--text-body)', marginBottom: '2px' }}>
                                                     Jenis Kulit
                                                 </p>
                                                 <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-headline)' }}>
                                                     {analysis.skin_type || 'Normal'}
-                                                </p>
-                                            </div>
-                                            <div>
-                                                <p style={{ fontSize: '0.75rem', color: 'var(--text-body)', marginBottom: '2px' }}>
-                                                    Usia Kulit
-                                                </p>
-                                                <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-headline)' }}>
-                                                    {analysis.predicted_age || 25} tahun
                                                 </p>
                                             </div>
                                         </div>
