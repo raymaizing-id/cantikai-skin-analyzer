@@ -363,7 +363,7 @@ const AnalysisResult = () => {
                 setProgress(10);
 
                 // Stage 2: AI Analysis (10-70%) - Direct to Gemini
-                setLoadingStage('🤖 Menganalisis dengan AI Dermatology...');
+                setLoadingStage(' Menganalisis dengan AI Dermatology...');
                 setProgress(20);
                 
                 console.log('🚀 Starting AI-Only Analysis...');
@@ -484,7 +484,7 @@ const AnalysisResult = () => {
             setProgress(10);
 
             // Stage 2: AI Analysis (10-70%) - Direct to Gemini
-            setLoadingStage('🤖 Menganalisis dengan AI Dermatology (Mode Toleran)...');
+            setLoadingStage(' Menganalisis dengan AI Dermatology (Mode Toleran)...');
             setProgress(20);
             
             console.log('🚀 Starting AI-Only Analysis (Skip Validation)...');
@@ -739,7 +739,7 @@ const AnalysisResult = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '36px' }}>
                     <div>
                         <p style={{ color: 'var(--text-headline)', marginBottom: '0px', fontWeight: 500, fontSize: '1.2rem', opacity: 0.9 }}>Laporan</p>
-                        <h1 className="headline" style={{ fontSize: '3.4rem', lineHeight: 1.05 }}>Kulit Anda</h1>
+                        <h1 className="headline" style={{ fontSize: 'clamp(1.8rem, 8vw, 2.4rem)', lineHeight: 1.05 }}>Kulit Anda</h1>
                     </div>
                     <button
                         onClick={() => navigate('/')}
@@ -749,28 +749,7 @@ const AnalysisResult = () => {
                     </button>
                 </div>
 
-                {/* Info Badge */}
-                {!loading && (
-                    <>
-                        {aiInsights && (
-                            <div style={{ margin: '0 0 20px', background: 'rgba(157, 90, 118, 0.1)', backdropFilter: 'blur(8px)', borderRadius: '20px', padding: '14px 20px', display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid var(--primary-light)' }}>
-                                <Info size={18} color="var(--primary-color)" />
-                                <p style={{ fontSize: '0.85rem', color: 'var(--primary-color)', fontWeight: 500, margin: 0, fontFamily: 'var(--font-sans)' }}>
-                                    Analisis: {analysisEngine}
-                                </p>
-                            </div>
-                        )}
-                        
-                        {!aiInsights && (
-                            <div style={{ margin: '0 0 20px', background: 'rgba(157, 90, 118, 0.08)', backdropFilter: 'blur(8px)', borderRadius: '20px', padding: '14px 20px', display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid rgba(157, 90, 118, 0.3)' }}>
-                                <Info size={18} color="var(--text-body)" />
-                                <p style={{ fontSize: '0.85rem', color: 'var(--text-body)', fontWeight: 500, margin: 0, fontFamily: 'var(--font-sans)' }}>
-                                    Mode CV: {analysisEngine} (AI tidak tersedia)
-                                </p>
-                            </div>
-                        )}
-                    </>
-                )}
+                {/* Info Badge - Hidden (Backend Implementation Detail) */}
 
                 {/* Guest Token Banner */}
                 {isGuest && tokenInfo && !loading && (
@@ -835,7 +814,7 @@ const AnalysisResult = () => {
                                 />
                             </svg>
                             <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center' }}>
-                                <h2 className="headline" style={{ fontSize: '2.5rem', margin: 0, color: 'var(--primary-color)' }}>{progress}%</h2>
+                                <h2 className="headline" style={{ fontSize: 'clamp(1.5rem, 6vw, 2rem)', margin: 0, color: 'var(--primary-color)' }}>{progress}%</h2>
                             </div>
                         </div>
                         
@@ -895,7 +874,7 @@ const AnalysisResult = () => {
                             <div style={{ animation: 'etherealFade 0.6s ease' }}>
                                 <div className="card-glass" style={{ padding: `${SPACING.card}px`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${SPACING.section}px` }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                                        <span className="headline" style={{ fontSize: '2.4rem', color: 'var(--text-headline)', lineHeight: 1 }}>{resultData?.overall_score}<span style={{ fontSize: '1.2rem', fontFamily: 'var(--font-sans)', fontWeight: 300 }}>%</span></span>
+                                        <span className="headline" style={{ fontSize: 'clamp(1.8rem, 6vw, 2.2rem)', color: 'var(--text-headline)', lineHeight: 1 }}>{resultData?.overall_score}<span style={{ fontSize: '0.8rem', fontFamily: 'var(--font-sans)', fontWeight: 300 }}>%</span></span>
                                         <span style={{ fontSize: TYPOGRAPHY.body, color: 'var(--text-headline)', fontWeight: 600 }}>Kesehatan Kulit</span>
                                     </div>
                                 </div>
@@ -1139,10 +1118,284 @@ const AnalysisResult = () => {
                                     </div>
                                 )}
 
-                                {/* Stage 3: AI Insights - COMPACT */}
+                                {/* Stage 3: AI Insights - COMPREHENSIVE DISPLAY */}
                                 {showProducts && aiInsights && (
                                     <div style={{ animation: 'etherealFade 0.6s ease', marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                         
+                                        {/* AI Summary */}
+                                        {aiInsights.summary && (
+                                            <div className="card-glass" style={{ padding: '16px' }}>
+                                                <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-headline)', marginBottom: '12px', fontFamily: 'var(--font-sans)' }}>
+                                                    📋 Ringkasan AI
+                                                </h4>
+                                                <p style={{ fontSize: '0.9rem', color: 'var(--text-body)', lineHeight: 1.6, margin: 0, fontFamily: 'var(--font-sans)' }}>
+                                                    {aiInsights.summary}
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {/* Main Concerns */}
+                                        {aiInsights.main_concerns && aiInsights.main_concerns.length > 0 && (
+                                            <div className="card-glass" style={{ padding: '16px' }}>
+                                                <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-headline)', marginBottom: '12px', fontFamily: 'var(--font-sans)' }}>
+                                                    🎯 Masalah Utama
+                                                </h4>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                                    {aiInsights.main_concerns.map((concern, idx) => (
+                                                        <span key={idx} style={{ 
+                                                            fontSize: '0.8rem', 
+                                                            color: 'var(--primary-color)', 
+                                                            background: 'rgba(230, 0, 126, 0.1)', 
+                                                            padding: '6px 12px', 
+                                                            borderRadius: '20px',
+                                                            fontWeight: 500,
+                                                            fontFamily: 'var(--font-sans)'
+                                                        }}>
+                                                            {concern}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Skin Type Analysis */}
+                                        {aiInsights.skin_type_analysis && (
+                                            <div className="card-glass" style={{ padding: '16px' }}>
+                                                <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-headline)', marginBottom: '12px', fontFamily: 'var(--font-sans)' }}>
+                                                    🔬 Analisis Jenis Kulit
+                                                </h4>
+                                                <p style={{ fontSize: '0.9rem', color: 'var(--text-body)', lineHeight: 1.6, margin: 0, fontFamily: 'var(--font-sans)' }}>
+                                                    {aiInsights.skin_type_analysis}
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {/* Recommendations */}
+                                        {aiInsights.recommendations && (
+                                            <div className="card-glass" style={{ padding: '16px' }}>
+                                                <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-headline)', marginBottom: '12px', fontFamily: 'var(--font-sans)' }}>
+                                                    ✨ Rekomendasi Perawatan
+                                                </h4>
+                                                
+                                                {/* Immediate Actions */}
+                                                {aiInsights.recommendations.immediate_actions && aiInsights.recommendations.immediate_actions.length > 0 && (
+                                                    <div style={{ marginBottom: '16px' }}>
+                                                        <h5 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--primary-color)', marginBottom: '8px', fontFamily: 'var(--font-sans)' }}>
+                                                            🚀 Tindakan Segera
+                                                        </h5>
+                                                        <ul style={{ paddingLeft: '20px', margin: 0 }}>
+                                                            {aiInsights.recommendations.immediate_actions.map((action, idx) => (
+                                                                <li key={idx} style={{ fontSize: '0.85rem', color: 'var(--text-body)', lineHeight: 1.6, marginBottom: '4px', fontFamily: 'var(--font-sans)' }}>
+                                                                    {action}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+
+                                                {/* Long-term Goals */}
+                                                {aiInsights.recommendations.long_term_goals && aiInsights.recommendations.long_term_goals.length > 0 && (
+                                                    <div style={{ marginBottom: '16px' }}>
+                                                        <h5 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--primary-color)', marginBottom: '8px', fontFamily: 'var(--font-sans)' }}>
+                                                            🎯 Target Jangka Panjang
+                                                        </h5>
+                                                        <ul style={{ paddingLeft: '20px', margin: 0 }}>
+                                                            {aiInsights.recommendations.long_term_goals.map((goal, idx) => (
+                                                                <li key={idx} style={{ fontSize: '0.85rem', color: 'var(--text-body)', lineHeight: 1.6, marginBottom: '4px', fontFamily: 'var(--font-sans)' }}>
+                                                                    {goal}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+
+                                                {/* Lifestyle Tips */}
+                                                {aiInsights.recommendations.lifestyle_tips && aiInsights.recommendations.lifestyle_tips.length > 0 && (
+                                                    <div>
+                                                        <h5 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--primary-color)', marginBottom: '8px', fontFamily: 'var(--font-sans)' }}>
+                                                            🌟 Tips Gaya Hidup
+                                                        </h5>
+                                                        <ul style={{ paddingLeft: '20px', margin: 0 }}>
+                                                            {aiInsights.recommendations.lifestyle_tips.map((tip, idx) => (
+                                                                <li key={idx} style={{ fontSize: '0.85rem', color: 'var(--text-body)', lineHeight: 1.6, marginBottom: '4px', fontFamily: 'var(--font-sans)' }}>
+                                                                    {tip}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Product Recommendations */}
+                                        {aiInsights.product_recommendations && aiInsights.product_recommendations.length > 0 && (
+                                            <div className="card-glass" style={{ padding: '16px' }}>
+                                                <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-headline)', marginBottom: '12px', fontFamily: 'var(--font-sans)' }}>
+                                                    🛍️ Rekomendasi Produk
+                                                </h4>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                    {aiInsights.product_recommendations.map((product, idx) => (
+                                                        <div key={idx} style={{ 
+                                                            background: 'rgba(255,255,255,0.6)', 
+                                                            borderRadius: '12px', 
+                                                            padding: '12px',
+                                                            border: '1px solid rgba(230, 0, 126, 0.1)'
+                                                        }}>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                                                <h6 style={{ 
+                                                                    fontSize: '0.9rem', 
+                                                                    fontWeight: 600, 
+                                                                    color: 'var(--text-headline)', 
+                                                                    margin: 0,
+                                                                    fontFamily: 'var(--font-sans)',
+                                                                    flex: 1
+                                                                }}>
+                                                                    {product.name}
+                                                                </h6>
+                                                                <span style={{ 
+                                                                    fontSize: '0.7rem', 
+                                                                    color: 'var(--primary-color)', 
+                                                                    background: 'rgba(230, 0, 126, 0.1)', 
+                                                                    padding: '4px 8px', 
+                                                                    borderRadius: '10px',
+                                                                    fontWeight: 500,
+                                                                    marginLeft: '8px'
+                                                                }}>
+                                                                    {product.category}
+                                                                </span>
+                                                            </div>
+                                                            <p style={{ 
+                                                                fontSize: '0.8rem', 
+                                                                color: 'var(--text-body)', 
+                                                                lineHeight: 1.5, 
+                                                                margin: '0 0 8px 0',
+                                                                fontFamily: 'var(--font-sans)'
+                                                            }}>
+                                                                {product.reason}
+                                                            </p>
+                                                            {product.addresses && product.addresses.length > 0 && (
+                                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                                                    {product.addresses.map((address, addressIdx) => (
+                                                                        <span key={addressIdx} style={{ 
+                                                                            fontSize: '0.7rem', 
+                                                                            color: 'var(--text-body)', 
+                                                                            background: 'rgba(157, 143, 166, 0.1)', 
+                                                                            padding: '2px 6px', 
+                                                                            borderRadius: '8px'
+                                                                        }}>
+                                                                            {address}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                            {product.slug && (
+                                                                <button
+                                                                    onClick={() => navigate(`/products/${product.slug}`)}
+                                                                    style={{
+                                                                        marginTop: '8px',
+                                                                        background: 'var(--primary-color)',
+                                                                        color: 'white',
+                                                                        border: 'none',
+                                                                        borderRadius: '8px',
+                                                                        padding: '6px 12px',
+                                                                        fontSize: '0.75rem',
+                                                                        fontWeight: 600,
+                                                                        cursor: 'pointer',
+                                                                        fontFamily: 'var(--font-sans)'
+                                                                    }}
+                                                                >
+                                                                    Lihat Detail
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Skincare Routine */}
+                                        {aiInsights.skincare_routine && (
+                                            <div className="card-glass" style={{ padding: '16px' }}>
+                                                <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-headline)', marginBottom: '12px', fontFamily: 'var(--font-sans)' }}>
+                                                    🌅 Rutinitas Skincare
+                                                </h4>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                                    {/* Morning Routine */}
+                                                    {aiInsights.skincare_routine.morning && (
+                                                        <div style={{ 
+                                                            background: 'rgba(255,255,255,0.6)', 
+                                                            borderRadius: '12px', 
+                                                            padding: '12px',
+                                                            border: '1px solid rgba(255, 193, 7, 0.2)'
+                                                        }}>
+                                                            <h5 style={{ 
+                                                                fontSize: '0.9rem', 
+                                                                fontWeight: 600, 
+                                                                color: 'var(--text-headline)', 
+                                                                marginBottom: '8px',
+                                                                fontFamily: 'var(--font-sans)',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px'
+                                                            }}>
+                                                                ☀️ Pagi
+                                                            </h5>
+                                                            <ol style={{ paddingLeft: '16px', margin: 0 }}>
+                                                                {aiInsights.skincare_routine.morning.map((step, idx) => (
+                                                                    <li key={idx} style={{ 
+                                                                        fontSize: '0.8rem', 
+                                                                        color: 'var(--text-body)', 
+                                                                        lineHeight: 1.5, 
+                                                                        marginBottom: '4px',
+                                                                        fontFamily: 'var(--font-sans)'
+                                                                    }}>
+                                                                        {step}
+                                                                    </li>
+                                                                ))}
+                                                            </ol>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Evening Routine */}
+                                                    {aiInsights.skincare_routine.evening && (
+                                                        <div style={{ 
+                                                            background: 'rgba(255,255,255,0.6)', 
+                                                            borderRadius: '12px', 
+                                                            padding: '12px',
+                                                            border: '1px solid rgba(75, 85, 99, 0.2)'
+                                                        }}>
+                                                            <h5 style={{ 
+                                                                fontSize: '0.9rem', 
+                                                                fontWeight: 600, 
+                                                                color: 'var(--text-headline)', 
+                                                                marginBottom: '8px',
+                                                                fontFamily: 'var(--font-sans)',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px'
+                                                            }}>
+                                                                🌙 Malam
+                                                            </h5>
+                                                            <ol style={{ paddingLeft: '16px', margin: 0 }}>
+                                                                {aiInsights.skincare_routine.evening.map((step, idx) => (
+                                                                    <li key={idx} style={{ 
+                                                                        fontSize: '0.8rem', 
+                                                                        color: 'var(--text-body)', 
+                                                                        lineHeight: 1.5, 
+                                                                        marginBottom: '4px',
+                                                                        fontFamily: 'var(--font-sans)'
+                                                                    }}>
+                                                                        {step}
+                                                                    </li>
+                                                                ))}
+                                                            </ol>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Legacy sections for backward compatibility */}
                                         {/* Key Insights */}
                                         {aiInsights.key_insights && aiInsights.key_insights.length > 0 && (
                                             <div className="card-glass" style={{ padding: '16px' }}>
@@ -1159,8 +1412,8 @@ const AnalysisResult = () => {
                                             </div>
                                         )}
 
-                                        {/* Recommendations */}
-                                        {aiInsights.recommendations && aiInsights.recommendations.length > 0 && (
+                                        {/* Legacy Recommendations (if different structure) */}
+                                        {!aiInsights.recommendations && aiInsights.recommendations && aiInsights.recommendations.length > 0 && (
                                             <div className="card-glass" style={{ padding: '16px' }}>
                                                 <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-headline)', marginBottom: '12px', fontFamily: 'var(--font-sans)' }}>
                                                     ✨ Recommendations
@@ -1175,8 +1428,8 @@ const AnalysisResult = () => {
                                             </div>
                                         )}
 
-                                        {/* Lifestyle Tips */}
-                                        {aiInsights.lifestyle_tips && aiInsights.lifestyle_tips.length > 0 && (
+                                        {/* Legacy Lifestyle Tips (if different structure) */}
+                                        {!aiInsights.recommendations?.lifestyle_tips && aiInsights.lifestyle_tips && aiInsights.lifestyle_tips.length > 0 && (
                                             <div className="card-glass" style={{ padding: '16px' }}>
                                                 <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-headline)', marginBottom: '12px', fontFamily: 'var(--font-sans)' }}>
                                                     🌟 Lifestyle Tips
@@ -1227,7 +1480,7 @@ const AnalysisResult = () => {
                                     <div style={{ animation: 'etherealFade 0.6s ease', marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                         {/* Button 1: Lihat Semua Rekomendasi Produk */}
                                         <button
-                                            onClick={() => navigate('/recommendations', { state: { resultData, aiInsights } })}
+                                            onClick={() => navigate('/recommendations', { state: { resultData, aiInsights, backendRecommendations: resultData?.product_recommendations } })}
                                             style={{
                                                 background: 'transparent',
                                                 color: 'var(--primary-color)',

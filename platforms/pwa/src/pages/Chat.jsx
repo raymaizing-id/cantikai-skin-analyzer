@@ -52,6 +52,40 @@ const CHAT_MODES = {
     }
 };
 
+// DERMON Products Data
+const DERMON_PRODUCTS = [
+    {
+        name: "DERMON Reboot Cream - Krim Perawatan Area Intim Pria",
+        description: "Merawat kelembapan dan kenyamanan kulit area intim, menghilangkan bau tidak sedap dan iritasi. Diformulasikan khusus untuk kulit sensitif.",
+        link: "https://dermon.id/products/reboot-cream"
+    },
+    {
+        name: "DERMON FreshCore Mist – Spray Penyegar Area Intim Pria", 
+        description: "Memberikan sensasi segar instan dengan menthol alami, melindungi dari bakteri penyebab bau tidak sedap. Merawat kelembapan dan kenyamanan kulit sensitif.",
+        link: "https://dermon.id/products/freshcore-mist"
+    },
+    {
+        name: "DERMON Intimate Wash 100ml",
+        description: "Membersihkan area intim dengan lembut dan efektif, menghilangkan bakteri dan kotoran yang dapat menyebabkan bau tidak sedap. Diformulasikan khusus untuk kulit sensitif.",
+        link: "https://dermon.id/products/intimate-wash"
+    },
+    {
+        name: "DERMON Intimate Lotion 100ml", 
+        description: "Merawat kelembapan dan kenyamanan kulit area intim, menghilangkan bau tidak sedap dan iritasi. Diformulasikan khusus untuk kulit sensitif.",
+        link: "https://dermon.id/products/intimate-lotion"
+    },
+    {
+        name: "DERMON Body Wash 100ml",
+        description: "Membersihkan tubuh dengan lembut dan efektif, menghilangkan bakteri dan kotoran yang dapat menyebabkan bau tidak sedap. Diformulasikan khusus untuk kulit sensitif.",
+        link: "https://dermon.id/products/body-wash"
+    },
+    {
+        name: "DERMON Deodorant 50ml",
+        description: "Menghilangkan bau tidak sedap dan kelembapan tubuh, memberikan sensasi segar dan kenyamanan. Diformulasikan khusus untuk kulit sensitif.",
+        link: "https://dermon.id/products/deodorant"
+    }
+];
+
 const Chat = () => {
     const navigate = useNavigate();
     const location = useLocation();
@@ -527,11 +561,99 @@ const Chat = () => {
         }
     };
 
+    // Function to check if user is asking for DERMON products
+    const isDermonRequest = (message) => {
+        const dermonKeywords = [
+            'dermon', 'area intim', 'intimate', 'pria', 'laki-laki', 'cowok',
+            'reboot cream', 'freshcore', 'intimate wash', 'intimate lotion',
+            'body wash', 'deodorant', 'perawatan pria', 'produk pria',
+            'bau badan', 'bau tidak sedap', 'kelembapan intim', 'kulit sensitif pria'
+        ];
+        
+        const lowerMessage = message.toLowerCase();
+        return dermonKeywords.some(keyword => lowerMessage.includes(keyword));
+    };
+
+    // Function to check if user is asking for product recommendations
+    const isProductRecommendationRequest = (message) => {
+        const keywords = [
+            // Direct product requests
+            'rekomendasi produk', 'produk skincare', 'produk kulit', 'produk untuk', 'produk yang bagus',
+            'produk terbaik', 'merk skincare', 'brand skincare', 'beautylatory',
+            
+            // Product types
+            'serum', 'moisturizer', 'cleanser', 'sunscreen', 'toner', 'essence', 'cream', 'lotion', 'gel',
+            'pembersih', 'pelembap', 'tabir surya', 'krim', 'sabun muka',
+            
+            // Recommendation patterns
+            'rekomendasi', 'rekomendasiin', 'saranin', 'kasih tau produk', 'ada produk',
+            'skincare untuk', 'rekomendasi untuk', 'cocok untuk kulit', 'bagus untuk',
+            
+            // Shopping intent
+            'mau beli', 'pengen coba', 'butuh produk', 'cari produk', 'pilih produk',
+            'produk apa', 'pakai produk', 'gunakan produk'
+        ];
+        
+        const lowerMessage = message.toLowerCase();
+        
+        // Check for direct keyword matches
+        const hasKeyword = keywords.some(keyword => lowerMessage.includes(keyword));
+        
+        // Check for question patterns about products
+        const questionPatterns = [
+            /ada.*produk/i,
+            /produk.*apa/i,
+            /bagus.*produk/i,
+            /cocok.*produk/i,
+            /pakai.*apa/i,
+            /gunakan.*apa/i,
+            /buat.*kulit/i
+        ];
+        
+        const hasQuestionPattern = questionPatterns.some(pattern => pattern.test(message));
+        
+        return hasKeyword || hasQuestionPattern;
+    };
+
+    // Function to fetch products from Beautylatory API
+    const fetchBeautylatory = async (page = 1) => {
+        try {
+            const apiUrl = import.meta.env.VITE_PRODUCTS_API_URL;
+            console.log(`🌐 API URL: ${apiUrl}`);
+            console.log(`🌐 Fetching Beautylatory products from page ${page}...`);
+            
+            const response = await fetch(`${apiUrl}?page=${page}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            const data = await response.json();
+            console.log(`✅ Fetched ${data.data?.length || 0} products from page ${page}`);
+            return data;
+        } catch (error) {
+            console.error(`❌ Error fetching Beautylatory products from page ${page}:`, error);
+            return null;
+        }
+    };
+
     const callGroqAPI = async (conversationHistory) => {
         try {
             const currentMode = CHAT_MODES[chatMode];
             
-            const systemMessage = {
+            // Check if user is asking for product recommendations
+            const lastUserMessage = conversationHistory[conversationHistory.length - 1];
+            const isProductRequest = lastUserMessage && lastUserMessage.role === 'user' && 
+                                   isProductRecommendationRequest(lastUserMessage.content);
+            
+            console.log('🔍 Product request check:', {
+                message: lastUserMessage?.content,
+                isProductRequest: isProductRequest
+            });
+            
+            // Check for DERMON product requests
+            const isDermonProductRequest = isDermonRequest(lastUserMessage?.content || '');
+            
+            let productData = null;
+            let systemMessage = {
                 role: 'system',
                 content: `Anda adalah Cantik AI, asisten dermatologi pribadi yang ramah dan profesional. Anda membantu pengguna dengan:
 - Analisis kondisi kulit
@@ -545,20 +667,85 @@ Format jawaban dengan markdown untuk readability:
 - Gunakan numbered list (1. 2. 3.) untuk langkah-langkah
 - Gunakan bullet points (- ) untuk list items
 - Gunakan emoji 🌸 sesekali untuk membuat percakapan lebih hangat
-- Untuk data terstruktur, gunakan format table markdown:
-  | Header 1 | Header 2 | Header 3 |
-  |----------|----------|----------|
-  | Data 1   | Data 2   | Data 3   |
-
-Contoh format yang baik:
-**Rekomendasi Skincare untuk Kulit Berminyak:**
-
-1. **Cleanser** - Gunakan gel cleanser dengan salicylic acid
-2. **Toner** - Pilih toner yang mengandung niacinamide
-3. **Moisturizer** - Gunakan gel moisturizer yang ringan
 
 Jaga jawaban tetap concise dan to the point.`
             };
+
+            // Handle DERMON product requests
+            if (isDermonProductRequest) {
+                console.log('🧴 User asking for DERMON products...');
+                
+                systemMessage.content += `
+
+PENTING: User bertanya tentang produk DERMON untuk perawatan pria. Berikan informasi tentang produk DERMON yang tersedia:
+
+PRODUK DERMON TERSEDIA:
+${DERMON_PRODUCTS.map(product => `- ${product.name}: ${product.description}`).join('\n')}
+
+INSTRUKSI:
+1. Jelaskan produk DERMON yang sesuai dengan kebutuhan user
+2. Berikan informasi manfaat dan kegunaan produk
+3. JANGAN berikan link dalam teks, karena akan ditampilkan sebagai tombol terpisah
+4. Fokus pada rekomendasi produk yang paling sesuai
+5. Gunakan bahasa yang informatif dan profesional
+
+FORMAT RESPONSE:
+Berikan rekomendasi produk DERMON dengan penjelasan singkat untuk setiap produk yang relevan.`;
+
+            } else if (isProductRequest) {
+                console.log('🛍️ User asking for product recommendations, fetching from Beautylatory API...');
+                
+                // Try page 1 first
+                productData = await fetchBeautylatory(1);
+                
+                // If no relevant products found, try page 2
+                if (!productData || !productData.data || productData.data.length === 0) {
+                    console.log('📄 No products on page 1, trying page 2...');
+                    productData = await fetchBeautylatory(2);
+                }
+                
+                if (productData && productData.data && productData.data.length > 0) {
+                    // Format product data for AI
+                    const productsInfo = productData.data.map(product => ({
+                        name: product.name,
+                        slug: product.slug,
+                        category: product.category.name,
+                        description: product.description.substring(0, 300) + '...' // Increased for better context
+                    }));
+                    
+                    console.log('📦 Products fetched:', productsInfo.length);
+                    
+                    systemMessage.content += `
+
+PENTING: Anda sekarang memiliki akses ke data produk BEAUTYLATORY terbaru. WAJIB gunakan data ini untuk memberikan rekomendasi yang spesifik:
+
+PRODUK BEAUTYLATORY TERSEDIA:
+${JSON.stringify(productsInfo, null, 2)}
+
+INSTRUKSI WAJIB untuk rekomendasi produk:
+1. SELALU gunakan produk dari data di atas
+2. WAJIB berikan link markdown yang benar: [Nama Produk](/products/SLUG)
+3. Jelaskan manfaat spesifik dari produk tersebut
+4. Rekomendasikan 2-3 produk yang paling relevan
+5. JANGAN rekomendasikan produk lain selain yang ada di data
+
+FORMAT MARKDOWN YANG BENAR:
+**Rekomendasi Produk BEAUTYLATORY untuk Anda:**
+
+1. **[BEAUTYLATORY - Urban Shield Serum 20 ml](/products/beautylatory-urban-shield-serum-20-ml)**
+   - Melindungi dari polusi dan radikal bebas
+   - Mengandung niacinamide dan ceramide
+
+2. **[BEAUTYLATORY - PHYTOSYNC UV Defense Hybrid Sunscreen 50 gr](/products/beautylatory-phytosync-uv-defense-hybrid-sunscreen-50-gr)**
+   - Perlindungan UV optimal
+   - Formula hybrid yang ringan
+
+PENTING: Gunakan format [Nama Produk](/products/slug) - BUKAN [/products/slug] saja!
+INGAT: Hanya rekomendasikan produk BEAUTYLATORY yang ada di data!`;
+                } else {
+                    console.log('❌ No products fetched from API');
+                }
+            }
 
             // OPTIMIZATION: Only send last N messages to save tokens
             const recentMessages = conversationHistory.slice(-MAX_CONTEXT_MESSAGES);
@@ -1426,6 +1613,40 @@ Respons AI: "${lastAiResponse.substring(0, 600)}"`
                                                 components={{
                                                     p: ({node, ...props}) => <p style={{ margin: '0 0 8px 0' }} {...props} />,
                                                     strong: ({node, ...props}) => <strong style={{ fontWeight: 600, color: 'var(--primary-color)' }} {...props} />,
+                                                    a: ({node, href, children, ...props}) => {
+                                                        // Handle internal links (starting with /)
+                                                        if (href && href.startsWith('/')) {
+                                                            return (
+                                                                <span
+                                                                    onClick={() => navigate(href)}
+                                                                    style={{
+                                                                        color: 'var(--primary-color)',
+                                                                        textDecoration: 'underline',
+                                                                        cursor: 'pointer',
+                                                                        fontWeight: 500
+                                                                    }}
+                                                                    {...props}
+                                                                >
+                                                                    {children}
+                                                                </span>
+                                                            );
+                                                        }
+                                                        // Handle external links
+                                                        return (
+                                                            <a
+                                                                href={href}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                style={{
+                                                                    color: 'var(--primary-color)',
+                                                                    textDecoration: 'underline'
+                                                                }}
+                                                                {...props}
+                                                            >
+                                                                {children}
+                                                            </a>
+                                                        );
+                                                    },
                                                     ul: ({node, ...props}) => <ul style={{ margin: '8px 0', paddingLeft: '20px' }} {...props} />,
                                                     ol: ({node, ...props}) => <ol style={{ margin: '8px 0', paddingLeft: '20px' }} {...props} />,
                                                     li: ({node, ...props}) => <li style={{ marginBottom: '4px' }} {...props} />,
@@ -1442,6 +1663,78 @@ Respons AI: "${lastAiResponse.substring(0, 600)}"`
                                             >
                                                 {message.content}
                                             </ReactMarkdown>
+
+                                            {/* DERMON Products Buttons - Show after AI response if DERMON request detected */}
+                                            {message.type === 'assistant' && (() => {
+                                                // Find the user message that triggered this AI response
+                                                const messageIndex = messages.indexOf(message);
+                                                const previousUserMessage = messages.slice(0, messageIndex).reverse().find(m => m.type === 'user');
+                                                return previousUserMessage && isDermonRequest(previousUserMessage.content);
+                                            })() && (
+                                                <div style={{ marginTop: '16px' }}>
+                                                    <p style={{ 
+                                                        fontSize: '0.85rem', 
+                                                        fontWeight: 600, 
+                                                        color: 'var(--primary-color)', 
+                                                        marginBottom: '12px',
+                                                        fontFamily: 'var(--font-sans)'
+                                                    }}>
+                                                        🛍️ Produk DERMON Tersedia:
+                                                    </p>
+                                                    <div style={{ 
+                                                        display: 'flex', 
+                                                        flexDirection: 'column', 
+                                                        gap: '8px' 
+                                                    }}>
+                                                        {DERMON_PRODUCTS.map((product, index) => (
+                                                            <button
+                                                                key={index}
+                                                                onClick={() => window.open(product.link, '_blank', 'noopener,noreferrer')}
+                                                                style={{
+                                                                    padding: '12px 16px',
+                                                                    borderRadius: '12px',
+                                                                    border: '2px solid var(--primary-color)',
+                                                                    background: 'rgba(157, 90, 118, 0.05)',
+                                                                    cursor: 'pointer',
+                                                                    textAlign: 'left',
+                                                                    transition: 'all 0.2s ease',
+                                                                    fontFamily: 'var(--font-sans)',
+                                                                    width: '100%'
+                                                                }}
+                                                                onMouseEnter={(e) => {
+                                                                    e.currentTarget.style.background = 'var(--primary-color)';
+                                                                    e.currentTarget.style.color = 'white';
+                                                                    e.currentTarget.style.transform = 'translateY(-1px)';
+                                                                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(157, 90, 118, 0.25)';
+                                                                }}
+                                                                onMouseLeave={(e) => {
+                                                                    e.currentTarget.style.background = 'rgba(157, 90, 118, 0.05)';
+                                                                    e.currentTarget.style.color = 'var(--text-headline)';
+                                                                    e.currentTarget.style.transform = 'translateY(0)';
+                                                                    e.currentTarget.style.boxShadow = 'none';
+                                                                }}
+                                                            >
+                                                                <div style={{ 
+                                                                    fontSize: '0.85rem', 
+                                                                    fontWeight: 600, 
+                                                                    marginBottom: '4px',
+                                                                    color: 'inherit'
+                                                                }}>
+                                                                    {product.name}
+                                                                </div>
+                                                                <div style={{ 
+                                                                    fontSize: '0.75rem', 
+                                                                    lineHeight: 1.4,
+                                                                    color: 'inherit',
+                                                                    opacity: 0.8
+                                                                }}>
+                                                                    {product.description}
+                                                                </div>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>

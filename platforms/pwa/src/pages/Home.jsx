@@ -30,7 +30,11 @@ const ProductCard = ({ image, name, brand, price, onClick }) => (
                     {brand}
                 </p>
             ) : null}
-            <p style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-headline)', fontFamily: 'var(--font-sans)' }}>Rp {Number(price || 0).toLocaleString('id-ID')}</p>
+            {price ? (
+                <p style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-headline)', fontFamily: 'var(--font-sans)' }}>Rp {Number(price || 0).toLocaleString('id-ID')}</p>
+            ) : (
+                <p style={{ fontSize: '0.65rem', color: 'var(--primary-color)', fontWeight: 500, fontFamily: 'var(--font-sans)' }}>Lihat Detail</p>
+            )}
         </div>
     </div>
 );
@@ -133,11 +137,19 @@ const Home = () => {
     const fetchAllProducts = async () => {
         try {
             setProductsLoading(true);
-            const productsData = await apiService.getProducts();
-            setProducts(productsData.slice(0, 10));
-            console.log('✅ Products loaded:', productsData.length);
+            // Fetch from Beautylatory API instead of local backend
+            const response = await fetch(`${import.meta.env.VITE_PRODUCTS_API_URL}?page=1`);
+            
+            if (!response.ok) {
+                throw new Error('Failed to fetch products from Beautylatory API');
+            }
+            
+            const data = await response.json();
+            // Take first 4 products for home page display
+            setProducts(data.data.slice(0, 4));
+            console.log('✅ Beautylatory products loaded:', data.data.length);
         } catch (error) {
-            console.error('❌ Error fetching products:', error);
+            console.error('❌ Error fetching Beautylatory products:', error);
             setProducts([]);
         } finally {
             setProductsLoading(false);
@@ -285,7 +297,9 @@ const Home = () => {
                 <div style={{ marginBottom: '24px', padding: '0 17px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                         <div style={{ flex: 1 }}>
-                            <h1 className="headline" style={{ fontSize: '1.8rem', marginBottom: '0', fontFamily: 'var(--font-serif)', textAlign: 'left' }}>Halo, {userName}!</h1>
+                            <h1 className="headline" style={{ fontSize: '1.8rem', marginBottom: '0', fontFamily: 'var(--font-serif)', textAlign: 'left' }}>
+                                {isGuestMode ? 'Halo!' : `Halo, ${userName}!`}
+                            </h1>
                         </div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                             {/* Profile Icon */}
@@ -738,12 +752,12 @@ const Home = () => {
                     ) : products.length > 0 ? (
                         products.map((product) => (
                             <ProductCard 
-                                key={product.id} 
-                                image={apiService.resolveMediaUrl(product.image_url) || `https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=300&q=80`}
+                                key={product.slug} 
+                                image={product.image_url}
                                 name={product.name}
-                                brand={product.brand}
-                                price={product.price}
-                                onClick={() => navigate(`/products/${product.id}`)}
+                                brand={product.category.name}
+                                price={null} // No price in Beautylatory API
+                                onClick={() => navigate(`/products/${product.slug}`)}
                             />
                         ))
                     ) : (

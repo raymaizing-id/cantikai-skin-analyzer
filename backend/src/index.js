@@ -15,6 +15,7 @@ import { fileURLToPath } from 'url';
 import { promises as fsPromises, constants as fsConstants } from 'fs';
 import dotenv from 'dotenv';
 import { saveImageToFile, readImageAsBase64, deleteImageFile } from './utils/imageStorage.js';
+import { getProductRecommendations, formatRecommendations } from './utils/productRecommendation.js';
 import { pool, dbGet, dbAll, dbRun, testConnection } from './config/database.js';
 // import { scheduleAutoCleanup } from './utils/autoCleanup.js';
 // import { exportToJSON, exportToCSV } from './utils/dataExport.js';
@@ -2203,9 +2204,9 @@ app.post('/api/v2/analysis/save', async (req, res) => {
             INSERT INTO analyses (
                 user_id, image_url, visualization_url, overall_score, skin_type,
                 fitzpatrick_type, predicted_age, analysis_version, engine, processing_time_ms,
-                cv_metrics, vision_analysis, ai_insights, client_session_id
+                cv_metrics, vision_analysis, ai_insights, client_session_id, product_recommendations
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             user_id,
             imagePath || '',
@@ -2220,7 +2221,8 @@ app.post('/api/v2/analysis/save', async (req, res) => {
             safeStringify(cvMetrics),
             safeStringify(visionAnalysis),
             processAnalysisField(ai_insights),
-            normalizedSessionId
+            normalizedSessionId,
+            '[]' // placeholder untuk product_recommendations
         ]);
         savedAnalysisId = result.lastID;
         
@@ -2237,6 +2239,45 @@ app.post('/api/v2/analysis/save', async (req, res) => {
         }
         if (analysis.ai_insights) {
             analysis.ai_insights = safeParseJSON(analysis.ai_insights, {});
+        }
+        
+        // Handle product recommendations - preserve Beautylatory products if provided
+        try {
+            let finalProductRecommendations = [];
+            
+            // Check if frontend already provided Beautylatory product recommendations
+            const frontendRecommendations = analysisDataObj?.product_recommendations || 
+                                          visionAnalysis?.product_recommendations ||
+                                          analysisDataObj?.ai_report?.product_recommendations;
+            
+            if (frontendRecommendations && Array.isArray(frontendRecommendations) && frontendRecommendations.length > 0) {
+                // Use Beautylatory products from frontend
+                finalProductRecommendations = frontendRecommendations;
+                console.log('✅ Using Beautylatory product recommendations from frontend:', finalProductRecommendations.length);
+            } else {
+                // Fallback to local database products
+                const analysisForRec = {
+                    skin_type: analysis.skin_type,
+                    scores: analysis.vision_analysis?.scores || {},
+                    priority_concerns: analysis.vision_analysis?.priority_concerns || []
+                };
+                const localProducts = await getProductRecommendations(dbAll, analysisForRec);
+                if (localProducts.length > 0) {
+                    finalProductRecommendations = localProducts;
+                    console.log('✅ Using local database product recommendations:', finalProductRecommendations.length);
+                }
+            }
+            
+            if (finalProductRecommendations.length > 0) {
+                analysis.product_recommendations = finalProductRecommendations;
+                // Update database with recommendations
+                await dbRun(
+                    'UPDATE analyses SET product_recommendations = ? WHERE id = ?',
+                    [JSON.stringify(finalProductRecommendations), result.lastID]
+                );
+            }
+        } catch (recError) {
+            console.warn('⚠️ Error handling product recommendations:', recError.message);
         }
         
         res.json(analysis);

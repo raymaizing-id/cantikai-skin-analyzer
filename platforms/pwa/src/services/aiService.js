@@ -459,7 +459,7 @@ Berikan JSON:
  */
 export const getCompleteAIAnalysis = async (imageBase64, cvData) => {
     try {
-        console.log('🤖 Starting AI Analysis Pipeline...');
+        console.log(' Starting AI Analysis Pipeline...');
         
         // Step 1: Gemini Vision Analysis
         console.log('👁️ Analyzing image with Gemini Vision...');

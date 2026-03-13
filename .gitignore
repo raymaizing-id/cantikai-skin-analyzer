@@ -24,9 +24,15 @@ dist/
 *.db-wal
 !database/scripts/cantik_ai.db
 
-# Uploads
+# Uploads - ignore all uploaded assets but keep structure
 uploads/*
 !uploads/.gitkeep
+!uploads/.gitignore
+backend/uploads/*
+!backend/uploads/.gitkeep
+!backend/uploads/.gitignore
+backend/uploads/assets/*
+!backend/uploads/assets/.gitkeep
 
 # Logs
 logs/

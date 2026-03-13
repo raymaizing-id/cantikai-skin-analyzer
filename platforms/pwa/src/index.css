@@ -42,6 +42,15 @@ body {
   min-height: 100vh;
   margin: 0;
   -webkit-font-smoothing: antialiased;
+  display: flex;
+  justify-content: center;
+}
+
+#root {
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes etherealFade {
@@ -79,6 +88,7 @@ body {
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
 }
 
 .screen-content {
@@ -86,6 +96,16 @@ body {
   padding: 48px 24px;
   padding-bottom: 120px;
   /* Space for floating nav */
+  box-sizing: border-box;
+}
+
+/* Ensure PWA stays at 600px max on all screens */
+@media (min-width: 601px) {
+  .app-container {
+    max-width: 600px !important;
+    width: 100% !important;
+    margin: 0 auto !important;
+  }
 }
 
 /* Typography perfectly matched */

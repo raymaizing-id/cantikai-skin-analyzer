@@ -67,7 +67,7 @@ const Education = () => {
                     >
                         <ArrowLeft size={20} color="var(--text-headline)" />
                     </button>
-                    <h1 className="headline" style={{ fontSize: '2.5rem', margin: 0 }}>Edukasi</h1>
+                    <h1 className="headline" style={{ fontSize: 'clamp(1.8rem, 6vw, 2.2rem)', margin: 0 }}>Edukasi</h1>
                 </div>
 
                 {/* Hero Card */}

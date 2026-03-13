@@ -654,7 +654,7 @@ const AnalysisResult = () => {
                         {aiInsights && (
                             <div className="card-glass" style={{ padding: '24px', marginTop: '20px' }}>
                                 <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-headline)', marginBottom: '16px' }}>
-                                    🤖 AI Insights & Recommendations
+                                     AI Insights & Recommendations
                                 </h3>
                                 
                                 {/* Summary */}

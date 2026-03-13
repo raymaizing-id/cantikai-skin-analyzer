@@ -40,6 +40,11 @@ const ScannerEnhanced = () => {
     const [distance, setDistance] = useState('');
     const [isOptimal, setIsOptimal] = useState(false);
     const [countdown, setCountdown] = useState(null);
+    
+    // Camera quality controls
+    const [zoomLevel, setZoomLevel] = useState(1); // 0.5 to 2.0
+    const [qualityLevel, setQualityLevel] = useState(1); // 0.5 to 2.0
+    const [showControls, setShowControls] = useState(false);
 
     // Use thresholds from helper
     const { BRIGHTNESS_MIN, BRIGHTNESS_MAX } = THRESHOLDS;
@@ -95,6 +100,16 @@ const ScannerEnhanced = () => {
 
         const startMediaPipe = async () => {
             try {
+                // Detect iOS early
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+                
+                console.log(`🍎 iOS Detection: ${isIOS}`);
+                console.log(`🦁 Safari Detection: ${isSafari}`);
+                console.log(`🌐 User Agent: ${navigator.userAgent}`);
+                console.log(`🔒 Is Secure Context: ${window.isSecureContext}`);
+                console.log(`📍 Protocol: ${window.location.protocol}`);
+                
                 await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js');
                 await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js');
                 await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js');
@@ -200,14 +215,17 @@ const ScannerEnhanced = () => {
                     const isPortrait = window.innerHeight > window.innerWidth;
                     console.log(`📱 Is Portrait: ${isPortrait}`);
                     
-                    const cameraWidth = isPortrait ? 0 : 1280;
-                    const cameraHeight = isPortrait ? 0 : 720;
+                    const cameraWidth = isPortrait ? Math.floor(480 * qualityLevel) : Math.floor(1280 * qualityLevel);
+                    const cameraHeight = isPortrait ? Math.floor(640 * qualityLevel) : Math.floor(720 * qualityLevel);
                     
                     console.log(`📱 Orientation: ${isPortrait ? 'Portrait' : 'Landscape'}`);
                     console.log(`📹 Camera Resolution: ${cameraWidth}x${cameraHeight}`);
                     console.log(`🖥️ Window Size: ${window.innerWidth}x${window.innerHeight}`);
                     
-                    cameraInstance = new window.Camera(videoRef.current, {
+                    // iOS-specific camera constraints
+                    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                    
+                    let cameraConfig = {
                         onFrame: async () => {
                             // STOP processing if preview is shown
                             if (isPreviewing.current) return;
@@ -222,13 +240,46 @@ const ScannerEnhanced = () => {
                                     // Silently ignore MediaPipe processing errors to reduce console noise
                                 }
                             }
-                        },
-                        width: cameraWidth,
-                        height: cameraHeight
-                    });
-                    cameraInstance.start().catch((err) => {
-                        console.error("Camera start failed:", err);
-                        if (isComponentMounted) setHasCameraError(true);
+                        }
+                    };
+                    
+                    // Only set resolution constraints for non-iOS devices
+                    if (!isIOS) {
+                        cameraConfig.width = cameraWidth;
+                        cameraConfig.height = cameraHeight;
+                    }
+                    
+                    console.log(`📱 Is iOS: ${isIOS}`);
+                    console.log(`📹 Camera Config:`, cameraConfig);
+                    
+                    cameraInstance = new window.Camera(videoRef.current, cameraConfig);
+                    cameraInstance.start().catch(async (err) => {
+                        console.error("MediaPipe Camera start failed:", err);
+                        
+                        // iOS Fallback: Try direct getUserMedia
+                        if (isIOS) {
+                            console.log("🍎 Trying iOS fallback with getUserMedia...");
+                            try {
+                                const stream = await navigator.mediaDevices.getUserMedia({
+                                    video: {
+                                        facingMode: facingMode,
+                                        width: { ideal: isPortrait ? 480 : 1280 },
+                                        height: { ideal: isPortrait ? 640 : 720 }
+                                    }
+                                });
+                                
+                                if (videoRef.current && isComponentMounted) {
+                                    videoRef.current.srcObject = stream;
+                                    await videoRef.current.play();
+                                    console.log("✅ iOS fallback successful");
+                                }
+                            } catch (fallbackErr) {
+                                console.error("iOS fallback also failed:", fallbackErr);
+                                if (isComponentMounted) setHasCameraError(true);
+                            }
+                        } else {
+                            if (isComponentMounted) setHasCameraError(true);
+                        }
                     });
                     
                     qualityCheckInterval = setInterval(checkImageQuality, 200); // Faster: 200ms instead of 500ms
@@ -312,7 +363,7 @@ const ScannerEnhanced = () => {
             
             stopCountdown();
         };
-    }, [facingMode]); // Only re-run when camera flips
+    }, [facingMode, qualityLevel]); // Re-run when camera flips or quality changes
 
     // Countdown functions using ref to avoid state issues
     const startCountdown = () => {
@@ -460,12 +511,14 @@ const ScannerEnhanced = () => {
                     autoPlay 
                     playsInline 
                     muted
+                    webkit-playsinline="true"
                     style={{ 
                         width: '100%', 
                         height: '100%', 
                         objectFit: 'cover',
                         transform: facingMode === 'user' ? 'scaleX(-1)' : 'none',
-                        filter: isCapturing ? 'brightness(1.5) blur(4px)' : 'none'
+                        filter: isCapturing ? 'brightness(1.5) blur(4px)' : 'none',
+                        zoom: zoomLevel
                     }} 
                 />
                 <canvas 
@@ -479,7 +532,8 @@ const ScannerEnhanced = () => {
                         objectFit: 'cover',
                         transform: facingMode === 'user' ? 'scaleX(-1)' : 'none',
                         pointerEvents: 'none',
-                        mixBlendMode: 'screen'
+                        mixBlendMode: 'screen',
+                        zoom: zoomLevel
                     }} 
                 />
             </div>
@@ -507,6 +561,165 @@ const ScannerEnhanced = () => {
                     <p className="subtitle" style={{ fontSize: '0.85rem', color: 'rgba(255, 255, 255, 0.85)', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
                         Posisikan wajah di dalam frame
                     </p>
+                    
+                    {/* Camera Controls Toggle - Icon Only */}
+                    <button
+                        onClick={() => setShowControls(!showControls)}
+                        style={{
+                            position: 'absolute',
+                            top: '10px',
+                            right: '20px',
+                            background: 'rgba(255, 255, 255, 0.15)',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '40px',
+                            height: '40px',
+                            color: 'white',
+                            fontSize: '16px',
+                            cursor: 'pointer',
+                            backdropFilter: 'blur(10px)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.2s ease'
+                        }}
+                    >
+                        ⚙️
+                    </button>
+                    
+                    {/* Professional Camera Controls Panel */}
+                    {showControls && (
+                        <div style={{
+                            position: 'absolute',
+                            top: '60px',
+                            right: '20px',
+                            background: 'rgba(0, 0, 0, 0.85)',
+                            borderRadius: '16px',
+                            padding: '20px',
+                            backdropFilter: 'blur(20px)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            minWidth: '220px',
+                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)'
+                        }}>
+                            {/* Zoom Control */}
+                            <div style={{ marginBottom: '20px' }}>
+                                <div style={{ 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between', 
+                                    alignItems: 'center',
+                                    marginBottom: '8px'
+                                }}>
+                                    <span style={{ 
+                                        color: 'rgba(255, 255, 255, 0.9)', 
+                                        fontSize: '0.8rem', 
+                                        fontWeight: 500,
+                                        fontFamily: 'var(--font-sans)'
+                                    }}>
+                                        Zoom
+                                    </span>
+                                    <span style={{ 
+                                        color: 'white', 
+                                        fontSize: '0.75rem', 
+                                        fontWeight: 600,
+                                        background: 'rgba(255, 255, 255, 0.1)',
+                                        padding: '2px 8px',
+                                        borderRadius: '8px'
+                                    }}>
+                                        {zoomLevel.toFixed(1)}x
+                                    </span>
+                                </div>
+                                <div style={{ position: 'relative', height: '4px', background: 'rgba(255, 255, 255, 0.2)', borderRadius: '2px' }}>
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '0',
+                                        left: '0',
+                                        height: '4px',
+                                        width: `${((zoomLevel - 0.5) / 1.5) * 100}%`,
+                                        background: 'linear-gradient(90deg, #ff6b9d, #c44569)',
+                                        borderRadius: '2px'
+                                    }} />
+                                    <input
+                                        type="range"
+                                        min="0.5"
+                                        max="2.0"
+                                        step="0.1"
+                                        value={zoomLevel}
+                                        onChange={(e) => setZoomLevel(parseFloat(e.target.value))}
+                                        style={{
+                                            position: 'absolute',
+                                            top: '-6px',
+                                            left: '0',
+                                            width: '100%',
+                                            height: '16px',
+                                            background: 'transparent',
+                                            outline: 'none',
+                                            appearance: 'none',
+                                            cursor: 'pointer'
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                            
+                            {/* Quality Control */}
+                            <div>
+                                <div style={{ 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between', 
+                                    alignItems: 'center',
+                                    marginBottom: '8px'
+                                }}>
+                                    <span style={{ 
+                                        color: 'rgba(255, 255, 255, 0.9)', 
+                                        fontSize: '0.8rem', 
+                                        fontWeight: 500,
+                                        fontFamily: 'var(--font-sans)'
+                                    }}>
+                                        Kejernihan
+                                    </span>
+                                    <span style={{ 
+                                        color: 'white', 
+                                        fontSize: '0.75rem', 
+                                        fontWeight: 600,
+                                        background: 'rgba(255, 255, 255, 0.1)',
+                                        padding: '2px 8px',
+                                        borderRadius: '8px'
+                                    }}>
+                                        {qualityLevel.toFixed(1)}x
+                                    </span>
+                                </div>
+                                <div style={{ position: 'relative', height: '4px', background: 'rgba(255, 255, 255, 0.2)', borderRadius: '2px' }}>
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '0',
+                                        left: '0',
+                                        height: '4px',
+                                        width: `${((qualityLevel - 0.5) / 1.5) * 100}%`,
+                                        background: 'linear-gradient(90deg, #4facfe, #00f2fe)',
+                                        borderRadius: '2px'
+                                    }} />
+                                    <input
+                                        type="range"
+                                        min="0.5"
+                                        max="2.0"
+                                        step="0.1"
+                                        value={qualityLevel}
+                                        onChange={(e) => setQualityLevel(parseFloat(e.target.value))}
+                                        style={{
+                                            position: 'absolute',
+                                            top: '-6px',
+                                            left: '0',
+                                            width: '100%',
+                                            height: '16px',
+                                            background: 'transparent',
+                                            outline: 'none',
+                                            appearance: 'none',
+                                            cursor: 'pointer'
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     
                     {/* Warnings - HORIZONTAL, COMPACT, AT TOP */}
                     {(hasGlasses || hasFilter) && (
@@ -583,7 +796,7 @@ const ScannerEnhanced = () => {
             )}
 
             {/* Modular Oval Frame Component - BIGGER for closer face - HIDE when preview shown */}
-            {!capturedImage && <OvalFrame isOptimal={isOptimal} />}
+            {/* {!capturedImage && <OvalFrame isOptimal={isOptimal} />} */}
 
             {/* Bottom gradient overlay - SMALLER, only at edge - HIDE when preview shown */}
             {!capturedImage && (
@@ -730,6 +943,47 @@ const ScannerEnhanced = () => {
                 @keyframes spin {
                     from { transform: rotate(0deg); }
                     to { transform: rotate(360deg); }
+                }
+                
+                /* Professional Slider Styling */
+                input[type="range"] {
+                    -webkit-appearance: none;
+                    appearance: none;
+                }
+                
+                input[type="range"]::-webkit-slider-thumb {
+                    -webkit-appearance: none;
+                    appearance: none;
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 50%;
+                    background: white;
+                    cursor: pointer;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+                    border: 2px solid rgba(255, 255, 255, 0.9);
+                    position: relative;
+                    z-index: 2;
+                }
+                
+                input[type="range"]::-moz-range-thumb {
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 50%;
+                    background: white;
+                    cursor: pointer;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+                    border: 2px solid rgba(255, 255, 255, 0.9);
+                    position: relative;
+                    z-index: 2;
+                }
+                
+                input[type="range"]::-webkit-slider-track {
+                    background: transparent;
+                }
+                
+                input[type="range"]::-moz-range-track {
+                    background: transparent;
+                    border: none;
                 }
             `}</style>
         </div>

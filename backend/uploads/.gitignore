@@ -1,0 +1,11 @@
+# Ignore all uploaded files
+*
+
+# But keep the directory structure
+!.gitkeep
+!.gitignore
+
+# Keep assets directory but ignore its contents
+!assets/
+assets/*
+!assets/.gitkeep

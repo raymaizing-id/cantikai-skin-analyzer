@@ -1,234 +1,290 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Sparkles, Tag, Star, Droplets, ShoppingBag, ShieldCheck, AlertTriangle } from 'lucide-react';
-import BottomNav from '../components/BottomNav';
-import apiService from '../services/api';
-
-const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=900&q=80';
-
-const toList = (value) => {
-    if (!value) return [];
-    if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
-    return String(value)
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean);
-};
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 
 const ProductDetail = () => {
-    const { id } = useParams();
+    const { slug } = useParams();
     const navigate = useNavigate();
-    const { state } = useLocation();
-
     const [product, setProduct] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
+    const [error, setError] = useState(null);
 
     useEffect(() => {
         const fetchProduct = async () => {
-            setLoading(true);
-            setError('');
             try {
-                const data = await apiService.getProductById(id);
-                setProduct(data);
+                setLoading(true);
+                const response = await fetch(`${import.meta.env.VITE_PRODUCTS_API_URL}/${slug}`);
+                
+                if (!response.ok) {
+                    throw new Error('Product not found');
+                }
+                
+                const data = await response.json();
+                setProduct(data.data);
             } catch (err) {
-                console.error('Get product detail error:', err);
-                setError(err.message || 'Gagal memuat detail produk');
+                setError(err.message);
+                console.error('Error fetching product:', err);
             } finally {
                 setLoading(false);
             }
         };
 
-        fetchProduct();
-    }, [id]);
+        if (slug) {
+            fetchProduct();
+        }
+    }, [slug]);
 
-    const recommendationReason = String(state?.recommendationReason || '').trim();
-    const ingredients = useMemo(() => toList(product?.ingredients), [product]);
-    const concerns = useMemo(() => toList(product?.concerns), [product]);
-    const skinTargets = useMemo(() => toList(product?.skin_type), [product]);
-    const purchaseUrl = product?.purchase_url || product?.product_url || product?.link_url || '';
-    const priceValue = Number(product?.price || 0);
+    const formatDescription = (description) => {
+        return description.split('\r\n').map((line, index) => {
+            if (line.trim() === '') return null;
+            
+            // Check if it's a header (all caps or starts with certain keywords)
+            const isHeader = line.match(/^[A-Z\s&-]+$/) || 
+                           line.startsWith('Manfaat Utama') || 
+                           line.startsWith('Tekstur & Aroma') ||
+                           line.startsWith('Cocok untuk') ||
+                           line.startsWith('Key Ingredients');
+            
+            if (isHeader) {
+                return (
+                    <h4 key={index} style={{ 
+                        color: 'var(--primary-color)', 
+                        fontSize: '1rem', 
+                        fontWeight: 600, 
+                        margin: '20px 0 8px 0',
+                        fontFamily: 'var(--font-sans)'
+                    }}>
+                        {line}
+                    </h4>
+                );
+            }
+            
+            return (
+                <p key={index} style={{ 
+                    color: 'rgba(255, 255, 255, 0.8)', 
+                    fontSize: '0.9rem', 
+                    lineHeight: 1.6,
+                    margin: '8px 0'
+                }}>
+                    {line}
+                </p>
+            );
+        }).filter(Boolean);
+    };
 
     if (loading) {
         return (
-            <div className="app-container">
-                <div className="screen-content" style={{ padding: '28px 24px 140px' }}>
-                    <p style={{ color: 'var(--text-body)', textAlign: 'center' }}>Memuat detail produk...</p>
+            <div className="app-container" style={{ background: '#36212a', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ textAlign: 'center', color: 'white' }}>
+                    <Loader2 size={40} className="animate-spin" style={{ marginBottom: '16px' }} />
+                    <p>Memuat detail produk...</p>
                 </div>
-                <BottomNav />
             </div>
         );
     }
 
-    if (error || !product) {
+    if (error) {
         return (
-            <div className="app-container">
-                <div className="screen-content" style={{ padding: '28px 24px 140px' }}>
-                    <button
+            <div className="app-container" style={{ background: '#36212a', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ textAlign: 'center', color: 'white' }}>
+                    <p style={{ marginBottom: '16px' }}>Error: {error}</p>
+                    <button 
                         onClick={() => navigate('/products')}
-                        style={{ border: 'none', background: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--primary-color)', marginBottom: '18px' }}
-                    >
-                        <ArrowLeft size={18} /> Kembali ke Produk
-                    </button>
-                    <div className="card-glass" style={{ padding: '22px', textAlign: 'center' }}>
-                        <AlertTriangle size={28} color="var(--primary-color)" style={{ marginBottom: '12px' }} />
-                        <p style={{ color: 'var(--text-headline)', marginBottom: '8px', fontWeight: 600 }}>Produk tidak ditemukan</p>
-                        <p style={{ color: 'var(--text-body)', fontSize: '0.9rem' }}>{error || 'ID produk tidak valid.'}</p>
-                    </div>
-                </div>
-                <BottomNav />
-            </div>
-        );
-    }
-
-    return (
-        <div className="app-container">
-            <div className="screen-content" style={{ padding: '24px', paddingBottom: '130px' }}>
-                <button
-                    onClick={() => navigate(-1)}
-                    style={{ border: 'none', background: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--primary-color)', marginBottom: '16px' }}
-                >
-                    <ArrowLeft size={18} /> Kembali
-                </button>
-
-                <div className="card-glass" style={{ padding: '16px', marginBottom: '16px' }}>
-                    <div style={{ width: '100%', borderRadius: '16px', overflow: 'hidden', marginBottom: '14px', background: 'rgba(157, 90, 118, 0.08)', aspectRatio: '1.1' }}>
-                        <img
-                            src={apiService.resolveMediaUrl(product.image_url) || FALLBACK_IMAGE}
-                            alt={product.name}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            onError={(event) => {
-                                event.currentTarget.src = FALLBACK_IMAGE;
-                            }}
-                        />
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                        {product.brand ? (
-                            <span style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '999px', background: 'rgba(157, 90, 118, 0.12)', color: 'var(--primary-color)', fontWeight: 600 }}>
-                                {product.brand}
-                            </span>
-                        ) : null}
-                        {product.category ? (
-                            <span style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '999px', background: 'rgba(89, 54, 69, 0.08)', color: 'var(--text-headline)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                <Tag size={12} /> {product.category}
-                            </span>
-                        ) : null}
-                        {Boolean(product.is_featured) ? (
-                            <span style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '999px', background: 'rgba(245, 158, 11, 0.16)', color: '#92400e', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                <Star size={12} /> Featured
-                            </span>
-                        ) : null}
-                    </div>
-
-                    <h1 className="headline" style={{ fontSize: '1.55rem', marginBottom: '6px' }}>
-                        {product.name}
-                    </h1>
-                    <p style={{ color: 'var(--primary-color)', fontSize: '1.3rem', fontWeight: 700, marginBottom: '8px' }}>
-                        Rp {Number.isFinite(priceValue) ? priceValue.toLocaleString('id-ID') : '0'}
-                    </p>
-                    <p style={{ color: 'var(--text-body)', fontSize: '0.9rem', lineHeight: 1.65, marginBottom: 0 }}>
-                        {product.description || 'Belum ada deskripsi detail untuk produk ini.'}
-                    </p>
-                </div>
-
-                {recommendationReason ? (
-                    <div className="card-glass" style={{ padding: '16px', marginBottom: '16px', background: 'linear-gradient(135deg, rgba(157, 90, 118, 0.14), rgba(241, 211, 226, 0.14))' }}>
-                        <p style={{ fontSize: '0.82rem', color: 'var(--primary-color)', fontWeight: 700, marginBottom: '8px', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                            <Sparkles size={14} />
-                            Rekomendasi untuk Kondisi Kulit Anda
-                        </p>
-                        <p style={{ color: 'var(--text-headline)', fontSize: '0.92rem', lineHeight: 1.6, margin: 0 }}>
-                            {recommendationReason}
-                        </p>
-                    </div>
-                ) : null}
-
-                <div className="card-glass" style={{ padding: '16px', marginBottom: '16px' }}>
-                    <h3 style={{ color: 'var(--text-headline)', fontSize: '1rem', marginBottom: '10px', display: 'inline-flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-sans)' }}>
-                        <ShieldCheck size={18} color="var(--primary-color)" />
-                        Cocok untuk
-                    </h3>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                        {(skinTargets.length > 0 ? skinTargets : ['Semua jenis kulit']).map((target) => (
-                            <span key={target} style={{ fontSize: '0.8rem', padding: '5px 10px', borderRadius: '999px', background: 'rgba(157, 90, 118, 0.1)', color: 'var(--primary-color)' }}>
-                                {target}
-                            </span>
-                        ))}
-                    </div>
-                    {concerns.length > 0 ? (
-                        <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                            {concerns.map((concern) => (
-                                <span key={concern} style={{ fontSize: '0.8rem', padding: '5px 10px', borderRadius: '999px', background: 'rgba(89, 54, 69, 0.08)', color: 'var(--text-body)' }}>
-                                    {concern}
-                                </span>
-                            ))}
-                        </div>
-                    ) : null}
-                </div>
-
-                <div className="card-glass" style={{ padding: '16px', marginBottom: '16px' }}>
-                    <h3 style={{ color: 'var(--text-headline)', fontSize: '1rem', marginBottom: '10px', display: 'inline-flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-sans)' }}>
-                        <Droplets size={18} color="var(--primary-color)" />
-                        Kandungan Utama
-                    </h3>
-                    {ingredients.length > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {ingredients.map((item) => (
-                                <div key={item} style={{ fontSize: '0.88rem', color: 'var(--text-body)', lineHeight: 1.6, padding: '8px 10px', background: 'rgba(255,255,255,0.6)', borderRadius: '10px' }}>
-                                    {item}
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <p style={{ fontSize: '0.88rem', color: 'var(--text-body)', margin: 0 }}>
-                            Informasi kandungan belum tersedia.
-                        </p>
-                    )}
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <button
-                        onClick={() => {
-                            if (purchaseUrl) {
-                                window.open(purchaseUrl, '_blank', 'noopener,noreferrer');
-                            }
-                        }}
-                        disabled={!purchaseUrl}
                         style={{
+                            background: 'var(--primary-color)',
+                            color: 'white',
                             border: 'none',
-                            borderRadius: '16px',
-                            padding: '14px',
-                            background: purchaseUrl ? 'linear-gradient(135deg, var(--primary-color), var(--primary-light))' : 'rgba(157,90,118,0.2)',
-                            color: purchaseUrl ? 'white' : 'rgba(89,54,69,0.6)',
-                            fontWeight: 600,
-                            cursor: purchaseUrl ? 'pointer' : 'not-allowed',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '8px'
-                        }}
-                    >
-                        <ShoppingBag size={16} />
-                        {purchaseUrl ? 'Buka Halaman Pembelian' : 'Link pembelian belum tersedia'}
-                    </button>
-                    <button
-                        onClick={() => navigate('/recommendations')}
-                        style={{
-                            border: '1px solid rgba(157,90,118,0.3)',
-                            borderRadius: '16px',
-                            padding: '12px',
-                            background: 'rgba(255,255,255,0.6)',
-                            color: 'var(--text-headline)',
-                            fontWeight: 600,
+                            padding: '12px 24px',
+                            borderRadius: '24px',
                             cursor: 'pointer'
                         }}
                     >
-                        Lihat Rekomendasi Lain
+                        Kembali ke Produk
                     </button>
                 </div>
             </div>
-            <BottomNav />
+        );
+    }
+
+    if (!product) {
+        return null;
+    }
+
+    return (
+        <div className="app-container" style={{ background: '#36212a', minHeight: '100vh' }}>
+            {/* Header */}
+            <div style={{ 
+                position: 'sticky', 
+                top: 0, 
+                background: 'rgba(54, 33, 42, 0.95)', 
+                backdropFilter: 'blur(10px)',
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                zIndex: 10
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <button
+                        onClick={() => navigate('/products')}
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '40px',
+                            height: '40px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            color: 'white'
+                        }}
+                    >
+                        <ArrowLeft size={20} />
+                    </button>
+                    <h1 style={{ 
+                        color: 'white', 
+                        fontSize: '1.2rem', 
+                        fontWeight: 700, 
+                        margin: 0,
+                        fontFamily: 'var(--font-sans)',
+                        flex: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                    }}>
+                        Detail Produk
+                    </h1>
+                </div>
+            </div>
+
+            {/* Product Content */}
+            <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
+                {/* Product Image */}
+                <div style={{ 
+                    width: '100%', 
+                    height: '300px', 
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                    marginBottom: '24px',
+                    border: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                    <img 
+                        src={product.image_url} 
+                        alt={product.name}
+                        style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover'
+                        }}
+                        onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.parentNode.innerHTML = '<div style="color: rgba(255,255,255,0.5); font-size: 1rem;">No Image Available</div>';
+                        }}
+                    />
+                </div>
+
+                {/* Product Info */}
+                <div style={{ 
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '16px',
+                    padding: '24px',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    backdropFilter: 'blur(10px)'
+                }}>
+                    {/* Category */}
+                    <div style={{ 
+                        background: 'rgba(255, 190, 215, 0.2)',
+                        color: 'rgba(255, 190, 215, 0.9)',
+                        fontSize: '0.8rem',
+                        padding: '6px 12px',
+                        borderRadius: '12px',
+                        display: 'inline-block',
+                        marginBottom: '16px',
+                        fontWeight: 500
+                    }}>
+                        {product.category.name}
+                    </div>
+                    
+                    {/* Product Name */}
+                    <h2 style={{ 
+                        color: 'white', 
+                        fontSize: '1.5rem', 
+                        fontWeight: 700, 
+                        margin: '0 0 20px 0',
+                        lineHeight: 1.3,
+                        fontFamily: 'var(--font-sans)'
+                    }}>
+                        {product.name}
+                    </h2>
+                    
+                    {/* Product Description */}
+                    <div style={{ marginTop: '20px' }}>
+                        {formatDescription(product.description)}
+                    </div>
+                    
+                    {/* Cobain Sekarang Button */}
+                    <div style={{ textAlign: 'center', marginTop: '24px' }}>
+                        <button
+                            onClick={() => window.open(`https://beautylatory.com/products/${product.slug}`, '_blank')}
+                            style={{
+                                background: 'var(--primary-color)',
+                                color: 'white',
+                                border: 'none',
+                                padding: '14px 32px',
+                                borderRadius: '30px',
+                                fontSize: '1rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                fontFamily: 'var(--font-sans)',
+                                transition: 'all 0.2s ease',
+                                marginBottom: '16px'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.target.style.transform = 'translateY(-2px)';
+                                e.target.style.boxShadow = '0 6px 20px rgba(255, 107, 157, 0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.target.style.transform = 'translateY(0)';
+                                e.target.style.boxShadow = 'none';
+                            }}
+                        >
+                            Cobain Sekarang
+                        </button>
+                    </div>
+                </div>
+
+                {/* Back Button */}
+                <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                    <button
+                        onClick={() => navigate('/products')}
+                        style={{
+                            background: 'transparent',
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            border: '1px solid rgba(255, 255, 255, 0.3)',
+                            padding: '12px 28px',
+                            borderRadius: '25px',
+                            fontSize: '0.9rem',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            fontFamily: 'var(--font-sans)',
+                            transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                            e.target.style.background = 'rgba(255, 255, 255, 0.1)';
+                            e.target.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.target.style.background = 'transparent';
+                            e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                        }}
+                    >
+                        Kembali ke Produk
+                    </button>
+                </div>
+            </div>
         </div>
     );
 };
