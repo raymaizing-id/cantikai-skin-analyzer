@@ -6,8 +6,8 @@ const envVars = Object.fromEntries(
         .map(l => l.split('=').map(s => s.trim()))
 );
 const GEMINI_API_KEY = envVars.GEMINI_API_KEY;
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models';
-const GEMINI_VISION_MODEL = 'gemini-2.0-flash';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_VISION_MODEL = 'gemini-2.5-flash';
 
 console.log('🧪 Testing Gemini API with model:', GEMINI_VISION_MODEL);
 

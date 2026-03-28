@@ -8,14 +8,14 @@
 // API Configuration
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 // Beautylatory API
 const BEAUTYLATORY_API_URL = import.meta.env.VITE_PRODUCTS_API_URL;
 
 // Models - Optimized for cost & performance
-const GEMINI_VISION_MODEL = 'gemini-2.5-flash'; // Vision analysis - CORRECT MODEL NAME
+const GEMINI_VISION_MODEL = 'gemini-2.5-flash'; // Vision analysis
 const GROQ_TEXT_MODEL = 'openai/gpt-oss-20b'; // Text insights with reasoning (cheap but powerful)
 // NOTE: Groq Vision models have been decommissioned - no longer available
 
