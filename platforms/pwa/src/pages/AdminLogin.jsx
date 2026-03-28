@@ -16,7 +16,9 @@ const AdminLogin = () => {
         setLoading(true);
 
         try {
+            console.log('🔐 Attempting admin login...', { username });
             const data = await apiService.adminLogin(username, password);
+            console.log('✅ Login successful:', data);
 
             localStorage.setItem('admin_session', JSON.stringify(data));
             localStorage.setItem('admin_logged_in', 'true');
@@ -31,15 +33,16 @@ const AdminLogin = () => {
 
             navigate('/admin/dashboard');
         } catch (err) {
-            console.error('Login error:', err);
-            setError(err.message || 'Connection error. Please check if backend is running.');
+            console.error('❌ Login error:', err);
+            const errorMessage = err.message || err.error || 'Connection error. Please check if backend is running.';
+            setError(errorMessage);
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div style={{
+        <div data-admin-page="true" style={{
             minHeight: '100vh',
             display: 'flex',
             alignItems: 'center',

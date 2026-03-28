@@ -267,7 +267,8 @@ const AnalysisResult = () => {
     };
 
     useEffect(() => {
-        if (!state?.imageBase64) {
+        // Allow loading from history with imageUrl OR imageBase64
+        if (!state?.imageBase64 && !state?.imageUrl && !state?.fromHistory) {
             navigate('/');
             return;
         }
@@ -714,10 +715,10 @@ const AnalysisResult = () => {
             {progress > 0 && <div style={{ height: loading ? '140px' : '60px' }} />}
 
             {/* Intense Background Face Blur */}
-            {state?.imageBase64 && (
+            {(state?.imageBase64 || state?.imageUrl) && (
                 <div style={{
                     position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-                    backgroundImage: `url(${state.imageBase64})`,
+                    backgroundImage: `url(${state?.imageBase64 || state?.imageUrl})`,
                     backgroundSize: 'cover',
                     backgroundPosition: 'center',
                     filter: 'blur(55px) brightness(1.1) saturate(1.2)',
@@ -987,7 +988,7 @@ const AnalysisResult = () => {
                                         
                                         <div className="card-glass" style={{ padding: '12px', overflow: 'hidden' }}>
                                             <img 
-                                                src={showOriginal ? state.imageBase64 : visualizationImage}
+                                                src={showOriginal ? (state?.imageBase64 || state?.imageUrl) : visualizationImage}
                                                 alt={showOriginal ? "Original" : "Analysis"}
                                                 style={{
                                                     width: '100%',

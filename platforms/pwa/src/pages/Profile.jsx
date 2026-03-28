@@ -1,18 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Calendar, Activity, TrendingUp, Settings, LogOut, Zap, Edit2, Save, X, Award, Target, BarChart3, ArrowLeft, Bell, Globe, Lock, HelpCircle } from 'lucide-react';
+import { User, Calendar, Activity, TrendingUp, Settings, LogOut, Zap, Edit2, Save, X, Award, Target, BarChart3, ArrowLeft, Bell, Globe, Lock, HelpCircle, Clock, CheckCircle, XCircle, Camera } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import apiService from '../services/api';
+import doctorApi from '../services/doctorApi';
 import { getAuthToken, loginUser, logoutUser } from '../utils/auth';
 
 const Profile = () => {
     const navigate = useNavigate();
+    const fileInputRef = useRef(null);
     const [user, setUser] = useState(null);
     const [lastAnalysis, setLastAnalysis] = useState(null);
     const [loading, setLoading] = useState(true);
     const [skinScore, setSkinScore] = useState(null);
     const [lastScanDays, setLastScanDays] = useState(null);
     const [isEditing, setIsEditing] = useState(false);
+    const [uploadingPhoto, setUploadingPhoto] = useState(false);
     const [editForm, setEditForm] = useState({
         name: '',
         age: '',
@@ -21,10 +24,25 @@ const Profile = () => {
     });
     const [totalAnalyses, setTotalAnalyses] = useState(0);
     const [averageScore, setAverageScore] = useState(0);
+    const [appointments, setAppointments] = useState([]);
+    const [loadingAppointments, setLoadingAppointments] = useState(false);
 
     useEffect(() => {
         loadUserData();
     }, []);
+
+    const fetchAppointments = async (userId) => {
+        try {
+            setLoadingAppointments(true);
+            const data = await doctorApi.getUserAppointments(userId);
+            // Show all non-cancelled appointments, most recent first, max 5
+            setAppointments(data.filter(apt => apt.status !== 'cancelled').slice(0, 5));
+        } catch (error) {
+            console.error('Error fetching appointments:', error);
+        } finally {
+            setLoadingAppointments(false);
+        }
+    };
 
     const applyUserState = (userData) => {
         if (!userData) return;
@@ -36,7 +54,6 @@ const Profile = () => {
             skin_type: userData.skin_type || ''
         });
     };
-
     const loadUserData = async () => {
         try {
             // Get user ID from localStorage
@@ -150,14 +167,30 @@ const Profile = () => {
                     setLastAnalysis(analyses[0]);
                     setTotalAnalyses(analyses.length);
                     
-                    // Calculate average score
-                    const avgScore = analyses.reduce((sum, analysis) => sum + analysis.overall_score, 0) / analyses.length;
-                    setAverageScore(Math.round(avgScore));
+                    // Fix NaN: filter valid scores before averaging
+                    const validScores = analyses
+                        .map(a => Number(a.overall_score))
+                        .filter(s => !isNaN(s) && s > 0);
+                    if (validScores.length > 0) {
+                        const avg = Math.round(validScores.reduce((sum, s) => sum + s, 0) / validScores.length);
+                        setAverageScore(avg);
+                    }
+
+                    // Auto-update skin_type from latest analysis if not set
+                    const latestSkinType = analyses[0]?.skin_type;
+                    if (latestSkinType && activeUser && !activeUser.skin_type) {
+                        try {
+                            await apiService.updateUser(resolvedUserId, { skin_type: latestSkinType });
+                            activeUser.skin_type = latestSkinType;
+                        } catch (e) { /* silent */ }
+                    }
                 }
             } catch (historyErr) {
                 console.error('Failed to load analysis history:', historyErr);
-                // It's okay if there's no history yet
             }
+
+            // Fetch appointments
+            fetchAppointments(resolvedUserId);
         } catch (err) {
             console.error('Failed to load user data:', err);
         } finally {
@@ -204,8 +237,29 @@ const Profile = () => {
         }
     };
 
-    const handleLogout = () => {
-        logoutUser();
+    const handlePhotoUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) { alert('Ukuran foto maksimal 2MB'); return; }
+
+        setUploadingPhoto(true);
+        try {
+            const reader = new FileReader();
+            reader.onload = async (ev) => {
+                const base64 = ev.target.result;
+                const userId = Number.parseInt(user?.id, 10);
+                const updated = await apiService.updateUser(userId, { photo_url: base64 });
+                applyUserState(updated);
+            };
+            reader.readAsDataURL(file);
+        } catch (err) {
+            alert('Gagal upload foto');
+        } finally {
+            setUploadingPhoto(false);
+        }
+    };
+
+    const handleLogout = () => {        logoutUser();
         localStorage.removeItem('lastAnalysis');
         localStorage.removeItem('lastSkinScore');
         
@@ -328,21 +382,49 @@ const Profile = () => {
                             </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' }}>
-                                <div style={{
-                                    width: '70px',
-                                    height: '70px',
-                                    borderRadius: '50%',
-                                    background: 'linear-gradient(135deg, var(--primary-color), var(--primary-light))',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: 'white',
-                                    fontSize: '1.8rem',
-                                    fontWeight: 600,
-                                    fontFamily: 'var(--font-serif)',
-                                    boxShadow: '0 4px 16px rgba(157, 90, 118, 0.3)'
-                                }}>
-                                    {user.username?.charAt(0).toUpperCase()}
+                                {/* Avatar with upload */}
+                                <div style={{ position: 'relative', flexShrink: 0 }}>
+                                    <div style={{
+                                        width: '72px', height: '72px', borderRadius: '50%',
+                                        background: 'linear-gradient(135deg, var(--primary-color), var(--primary-light))',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        overflow: 'hidden',
+                                        boxShadow: '0 4px 16px rgba(157, 90, 118, 0.3)'
+                                    }}>
+                                        {(user.photo_url || user.avatar_url) ? (
+                                            <img
+                                                src={user.photo_url || user.avatar_url}
+                                                alt="Foto profil"
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                onError={e => { e.target.style.display = 'none'; }}
+                                            />
+                                        ) : (
+                                            <span style={{ color: 'white', fontSize: '1.8rem', fontWeight: 600, fontFamily: 'var(--font-serif)' }}>
+                                                {(user.name || user.username || '?').charAt(0).toUpperCase()}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {/* Upload button overlay */}
+                                    <button
+                                        onClick={() => fileInputRef.current?.click()}
+                                        disabled={uploadingPhoto}
+                                        style={{
+                                            position: 'absolute', bottom: 0, right: 0,
+                                            width: '24px', height: '24px', borderRadius: '50%',
+                                            background: 'var(--primary-color)', border: '2px solid white',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        <Camera size={12} color="white" />
+                                    </button>
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept="image/*"
+                                        style={{ display: 'none' }}
+                                        onChange={handlePhotoUpload}
+                                    />
                                 </div>
                                 <div style={{ flex: 1 }}>
                                     {isEditing ? (
@@ -515,14 +597,14 @@ const Profile = () => {
                                     <div style={{ padding: '14px', background: 'rgba(157, 90, 118, 0.1)', borderRadius: '12px', textAlign: 'center' }}>
                                         <Target size={20} color="var(--primary-color)" style={{ marginBottom: '6px' }} />
                                         <p style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--primary-color)', marginBottom: '2px', fontFamily: 'var(--font-serif)' }}>
-                                            {averageScore}%
+                                            {averageScore > 0 ? `${averageScore}%` : '--'}
                                         </p>
                                         <p style={{ fontSize: '0.7rem', color: 'var(--text-body)', fontFamily: 'var(--font-sans)' }}>Rata-rata</p>
                                     </div>
                                     <div style={{ padding: '14px', background: 'rgba(157, 90, 118, 0.1)', borderRadius: '12px', textAlign: 'center' }}>
                                         <BarChart3 size={20} color="var(--primary-color)" style={{ marginBottom: '6px' }} />
                                         <p style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--primary-color)', marginBottom: '2px', fontFamily: 'var(--font-serif)' }}>
-                                            {skinScore || averageScore}%
+                                            {skinScore ? `${skinScore}%` : averageScore > 0 ? `${averageScore}%` : '--'}
                                         </p>
                                         <p style={{ fontSize: '0.7rem', color: 'var(--text-body)', fontFamily: 'var(--font-sans)' }}>Terbaru</p>
                                     </div>
@@ -587,6 +669,83 @@ const Profile = () => {
                                 </button>
                             </div>
                         )}
+
+                        {/* Appointments Section */}
+                        <div style={{ 
+                            padding: '18px', 
+                            marginBottom: '16px',
+                            background: 'rgba(255, 255, 255, 0.4)',
+                            backdropFilter: 'blur(25px)',
+                            borderRadius: '20px',
+                            border: '1px solid rgba(255,255,255,0.6)',
+                            boxShadow: '0 8px 32px rgba(157, 90, 118, 0.1)'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                                <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-headline)', fontFamily: 'var(--font-serif)', margin: 0 }}>
+                                    Janji Konsultasi
+                                </h3>
+                                <button onClick={() => navigate('/doctors')} style={{ fontSize: '0.78rem', color: 'var(--primary-color)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                                    + Buat Janji
+                                </button>
+                            </div>
+
+                            {loadingAppointments ? (
+                                <p style={{ fontSize: '0.84rem', color: 'var(--text-body)', textAlign: 'center', padding: '12px 0' }}>Memuat...</p>
+                            ) : appointments.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                                    <p style={{ fontSize: '0.84rem', color: 'var(--text-body)', marginBottom: '10px' }}>Belum ada janji konsultasi</p>
+                                    <button onClick={() => navigate('/doctors')} style={{ padding: '8px 20px', borderRadius: '20px', border: 'none', background: 'var(--primary-color)', color: 'white', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}>
+                                        Cari Dokter
+                                    </button>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {appointments.map((apt) => {
+                                        const statusMap = {
+                                            pending:   { label: 'Menunggu Konfirmasi', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', icon: <Clock size={12} /> },
+                                            confirmed: { label: 'Dikonfirmasi', color: '#10b981', bg: 'rgba(16,185,129,0.1)', icon: <CheckCircle size={12} /> },
+                                            completed: { label: 'Selesai', color: '#6366f1', bg: 'rgba(99,102,241,0.1)', icon: <CheckCircle size={12} /> },
+                                            cancelled: { label: 'Dibatalkan', color: '#ef4444', bg: 'rgba(239,68,68,0.1)', icon: <XCircle size={12} /> },
+                                        };
+                                        const st = statusMap[apt.status] || statusMap.pending;
+                                        return (
+                                            <div key={apt.id} style={{ padding: '14px', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.8)', borderRadius: '14px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                                    <div style={{ flex: 1 }}>
+                                                        <p style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-headline)', marginBottom: '2px' }}>{apt.doctor_name}</p>
+                                                        <p style={{ fontSize: '0.75rem', color: 'var(--primary-color)', margin: '0 0 6px', fontWeight: 500 }}>{apt.specialty}</p>
+                                                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                                            <span style={{ fontSize: '0.75rem', color: 'var(--text-body)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                                <Calendar size={11} />
+                                                                {apt.appointment_date ? new Date(apt.appointment_date + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}
+                                                            </span>
+                                                            <span style={{ fontSize: '0.75rem', color: 'var(--text-body)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                                <Clock size={11} />
+                                                                {apt.appointment_time ? apt.appointment_time.substring(0, 5) : '-'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <span style={{ padding: '4px 10px', borderRadius: '20px', background: st.bg, color: st.color, fontSize: '0.7rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                                                        {st.icon}{st.label}
+                                                    </span>
+                                                </div>
+                                                {apt.admin_notes && (
+                                                    <div style={{ background: 'rgba(157,90,118,0.06)', borderRadius: '8px', padding: '8px 10px', marginTop: '6px' }}>
+                                                        <p style={{ fontSize: '0.75rem', color: '#9d5a76', fontWeight: 600, margin: '0 0 2px' }}>Catatan Dokter:</p>
+                                                        <p style={{ fontSize: '0.78rem', color: 'var(--text-body)', margin: 0, lineHeight: 1.4 }}>{apt.admin_notes}</p>
+                                                    </div>
+                                                )}
+                                                {apt.complaint && (
+                                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-body)', margin: '6px 0 0', fontStyle: 'italic', opacity: 0.7 }}>
+                                                        "{apt.complaint.substring(0, 80)}{apt.complaint.length > 80 ? '...' : ''}"
+                                                    </p>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
 
                         {/* Quick Actions */}
                         <div style={{ 

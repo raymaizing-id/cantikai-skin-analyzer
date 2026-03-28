@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, MessageCircle, Lightbulb, TrendingUp, User, Settings, BookOpen } from 'lucide-react';
+import { Sparkles, MessageCircle, Lightbulb, TrendingUp, User, Settings, Video } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import apiService from '../services/api';
 import { isAuthenticated, isGuestSession } from '../utils/auth';
@@ -654,7 +654,7 @@ const Home = () => {
                             <p style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-body)', textAlign: 'center', fontFamily: 'var(--font-sans)' }}>Riwayat</p>
                         </div>
                         
-                        {/* Rekomendasi */}
+                        {/* Rekomendasi (AI recommendations) */}
                         <div 
                             style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', cursor: 'pointer' }} 
                             onClick={() => navigate('/recommendations')}
@@ -685,10 +685,10 @@ const Home = () => {
                             <p style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-body)', textAlign: 'center', fontFamily: 'var(--font-sans)' }}>Rekomendasi</p>
                         </div>
                         
-                        {/* Konsultasi (Chat) */}
+                        {/* Konsultasi (Doctor consultation) */}
                         <div 
                             style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', cursor: 'pointer' }} 
-                            onClick={() => navigate('/chat')}
+                            onClick={() => navigate('/doctors')}
                         >
                             <div style={{ 
                                 width: 64, 
@@ -711,30 +711,12 @@ const Home = () => {
                                 e.currentTarget.style.transform = 'translateY(0)';
                                 e.currentTarget.style.boxShadow = '0 4px 12px rgba(157, 90, 118, 0.08)';
                             }}>
-                                <MessageCircle size={28} color="var(--primary-color)" />
+                                <Video size={28} color="var(--primary-color)" />
                             </div>
                             <p style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-body)', textAlign: 'center', fontFamily: 'var(--font-sans)' }}>Konsultasi</p>
                         </div>
                     </div>
                 </div>
-
-                {latestArticle && (
-                    <div
-                        className="card-glass"
-                        style={{ marginBottom: '18px', padding: '14px', cursor: 'pointer' }}
-                        onClick={() => navigate(`/education/${latestArticle.id}`)}
-                    >
-                        <p style={{ fontSize: '0.75rem', color: 'var(--primary-color)', fontWeight: 700, marginBottom: '8px', display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
-                            <BookOpen size={14} /> ARTIKEL TERBARU
-                        </p>
-                        <h3 style={{ fontSize: '0.95rem', color: 'var(--text-headline)', marginBottom: '4px', fontFamily: 'var(--font-sans)' }}>
-                            {latestArticle.title}
-                        </h3>
-                        <p style={{ fontSize: '0.8rem', color: 'var(--text-body)', margin: 0, lineHeight: 1.5 }}>
-                            {latestArticle.excerpt || 'Baca insight skincare terbaru dari tim Cantik AI.'}
-                        </p>
-                    </div>
-                )}
 
                 {/* Section Title - Compact */}
                 <div style={{ marginBottom: '16px' }}>

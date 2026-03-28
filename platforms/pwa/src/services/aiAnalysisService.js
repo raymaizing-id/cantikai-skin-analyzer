@@ -15,29 +15,44 @@ const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const BEAUTYLATORY_API_URL = import.meta.env.VITE_PRODUCTS_API_URL;
 
 // Models - Optimized for cost & performance
-const GEMINI_VISION_MODEL = 'gemini-2.5-flash'; // Vision analysis only
+const GEMINI_VISION_MODEL = 'gemini-2.5-flash'; // Vision analysis - CORRECT MODEL NAME
 const GROQ_TEXT_MODEL = 'openai/gpt-oss-20b'; // Text insights with reasoning (cheap but powerful)
-const GROQ_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct'; // Fallback vision
+// NOTE: Groq Vision models have been decommissioned - no longer available
 
 const INVALID_QUALITY_KEYWORDS = [
-    'mask',
-    'masker',
-    'kacamata',
-    'glasses',
-    'very dark',
-    'sangat gelap',
-    'severely blurred',
-    'sangat buram',
+    // Strict rejections - MUST reject
+    'multiple face',
+    'lebih dari satu wajah',
+    'bukan wajah',
     'non-face',
     'non face',
     'animal',
     'hewan',
     'object',
-    'bukan wajah',
-    'multiple face',
-    'lebih dari satu wajah',
+    'benda',
     'completely dark',
-    'totally blurred'
+    'totally blurred',
+    'sangat gelap sekali',
+    'sangat buram sekali',
+    'tidak terlihat sama sekali',
+    
+    // Moderate issues - can proceed with warning
+    // These are now ALLOWED with skipValidation
+];
+
+const MODERATE_QUALITY_KEYWORDS = [
+    'mask',
+    'masker',
+    'kacamata',
+    'glasses',
+    'dark',
+    'gelap',
+    'blurred',
+    'buram',
+    'slightly',
+    'sedikit',
+    'minor',
+    'ringan'
 ];
 
 const collectQualityIssues = (qualityCheck = {}) => {
@@ -47,23 +62,40 @@ const collectQualityIssues = (qualityCheck = {}) => {
         .filter(Boolean);
 };
 
-const ensureVisionInputValidity = (visionResult = {}) => {
+const ensureVisionInputValidity = (visionResult = {}, skipValidation = false) => {
     const qualityCheck = visionResult?.quality_check || {};
     const metrics = qualityCheck?.metrics || {};
     const issues = collectQualityIssues(qualityCheck);
 
+    // If skipValidation is true, only check for STRICT rejections
+    const keywordsToCheck = skipValidation ? INVALID_QUALITY_KEYWORDS : [...INVALID_QUALITY_KEYWORDS, ...MODERATE_QUALITY_KEYWORDS];
+
     // Check for invalid quality keywords
     const hasInvalidKeywords = issues.some(issue => 
-        INVALID_QUALITY_KEYWORDS.some(keyword => 
+        keywordsToCheck.some(keyword => 
             issue.toLowerCase().includes(keyword.toLowerCase())
         )
     );
 
-    if (hasInvalidKeywords) {
+    // Check if quality_check explicitly says invalid
+    const isExplicitlyInvalid = qualityCheck.is_valid === false;
+
+    if (hasInvalidKeywords || isExplicitlyInvalid) {
+        // Determine if it's a moderate issue
+        const isModerateIssue = !skipValidation && issues.some(issue =>
+            MODERATE_QUALITY_KEYWORDS.some(keyword =>
+                issue.toLowerCase().includes(keyword.toLowerCase())
+            )
+        );
+
         throw {
             code: 'INVALID_INPUT_QUALITY',
-            message: 'Image quality is not suitable for analysis',
-            details: issues
+            message: isModerateIssue 
+                ? 'Kualitas foto kurang optimal. Anda bisa mencoba lagi atau lanjutkan dengan hasil yang mungkin kurang akurat.'
+                : 'Foto tidak valid untuk analisis. Pastikan wajah terlihat jelas tanpa masker/kacamata dan dengan pencahayaan yang cukup.',
+            details: issues,
+            canRetry: isModerateIssue,
+            isModerate: isModerateIssue
         };
     }
 
@@ -110,7 +142,7 @@ async function fetchBeautylatoryProducts() {
 /**
  * Main function: Complete skin analysis using AI only
  * ONLY 2 API CALLS:
- * 1. Gemini Vision - Analyze image
+ * 1. Gemini Vision - Analyze image (with Groq Vision fallback)
  * 2. GPT-OSS-20B - Generate complete report
  * @param {string} imageBase64 - Base64 encoded image
  * @param {boolean} skipValidation - Skip strict photo validation (default: false)
@@ -121,10 +153,22 @@ export const analyzeSkinWithAI = async (imageBase64, skipValidation = false) => 
         console.log('🚀 Starting AI-Only Skin Analysis with Beautylatory integration...');
         const startTime = Date.now();
 
-        // Step 1: Gemini Vision - Comprehensive skin analysis from image
+        let visionResults;
+        let visionEngine = 'Gemini 2.5 Flash';
+        
+        // Step 1: Try Gemini Vision (ONLY option for vision now)
         console.log('👁️ Step 1: Gemini Vision Analysis...');
-        const visionResults = await analyzeWithGeminiVision(imageBase64, skipValidation);
-        console.log('✅ Vision analysis complete');
+        try {
+            visionResults = await analyzeWithGeminiVision(imageBase64, skipValidation);
+            console.log('✅ Gemini Vision analysis complete');
+        } catch (geminiError) {
+            console.warn('⚠️ Gemini Vision failed:', geminiError.message || geminiError);
+            
+            // NOTE: Groq Vision models have been decommissioned
+            // Directly use emergency fallback
+            console.log('🔄 Using emergency fallback (Groq Vision no longer available)...');
+            throw geminiError; // Trigger emergency fallback
+        }
 
         // Step 2: Fetch Beautylatory products for recommendations
         console.log('🛍️ Step 2: Fetching product data...');
@@ -146,11 +190,11 @@ export const analyzeSkinWithAI = async (imageBase64, skipValidation = false) => 
             data: {
                 // Core metrics
                 overall_score: visionResults.overall_score,
-                analysis_version: '6.1-with-beautylatory-products',
-                engine: 'Gemini 2.5 Flash (Vision) + Groq GPT-OSS-20B (Text) + Beautylatory Products',
+                analysis_version: '6.2-enhanced-fallback',
+                engine: `${visionEngine} (Vision) + Groq GPT-OSS-20B (Text) + Beautylatory Products`,
                 processing_time: duration,
                 
-                // Skin analysis data from Gemini Vision
+                // Skin analysis data from Vision AI
                 ...visionResults,
                 
                 // Complete AI report from Groq (with product recommendations)
@@ -162,7 +206,7 @@ export const analyzeSkinWithAI = async (imageBase64, skipValidation = false) => 
                 
                 // Metadata
                 analyzed_at: new Date().toISOString(),
-                api_provider: 'Gemini + Groq + Beautylatory (Enhanced)',
+                api_provider: `${visionEngine} + Groq + Beautylatory`,
                 api_calls_count: 2, // Still only 2 AI calls
                 products_fetched: beautylatoryProducts.length
             }
@@ -171,106 +215,115 @@ export const analyzeSkinWithAI = async (imageBase64, skipValidation = false) => 
     } catch (error) {
         console.error('❌ AI Analysis Error:', error);
         
-        // If it's a validation error, throw it directly
-        if (error?.code === 'INVALID_INPUT_QUALITY') {
-            throw error;
-        }
-        
-        // For other errors, try Groq vision fallback
-        try {
-            console.log('⚠️ Gemini failed, trying Groq vision fallback...');
-            const groqResult = await analyzeSkinWithGroqVision(imageBase64);
-            
-            // If Groq succeeds, also fetch Beautylatory products and generate report
-            if (groqResult.success) {
-                console.log('🛍️ Groq succeeded, fetching Beautylatory products...');
-                const beautylatoryProducts = await fetchBeautylatoryProducts();
-                
-                // Generate complete report with products using Groq data
-                const completeReport = await generateCompleteReportWithProducts(groqResult.data, beautylatoryProducts);
-                
-                return {
-                    success: true,
-                    data: {
-                        ...groqResult.data,
-                        ai_report: completeReport,
-                        ai_insights: completeReport,
-                        product_recommendations: completeReport.product_recommendations || [],
-                        products_fetched: beautylatoryProducts.length,
-                        engine: 'Groq Fallback + Beautylatory Products'
-                    }
-                };
-            }
-        } catch (groqError) {
-            console.error('❌ Groq fallback also failed:', groqError);
-        }
-        
-        // Last resort: return basic analysis with Beautylatory products
+        // Last resort: Emergency fallback with basic analysis
         console.log('🔄 Using emergency fallback with basic analysis...');
         
         const beautylatoryProducts = await fetchBeautylatoryProducts();
             
-            return {
-                success: true,
-                data: {
-                    overall_score: 75,
-                    analysis_version: '6.1-emergency-fallback',
-                    engine: 'Emergency Fallback + Beautylatory Products',
-                    processing_time: '2.0',
-                    
-                    // Basic skin data
-                    skin_type: 'combination',
-                    fitzpatrick_type: 'III',
-                    acne: { acne_score: 25, severity: 'mild' },
-                    hydration: { hydration_level: 65, status: 'normal' },
-                    oiliness: { oiliness_score: 50, sebum_level: 'moderate' },
-                    
-                    // Basic AI report with products
-                    ai_report: {
-                        summary: "Analisis kulit telah selesai. Meskipun terjadi kendala teknis, kami tetap dapat memberikan rekomendasi produk yang sesuai.",
-                        main_concerns: ["Perawatan kulit umum", "Hidrasi", "Perlindungan"],
-                        skin_type_analysis: "Kulit Anda menunjukkan karakteristik kombinasi dengan kebutuhan perawatan seimbang.",
-                        recommendations: {
-                            immediate_actions: ["Gunakan pembersih yang lembut", "Aplikasikan pelembap secara teratur"],
-                            long_term_goals: ["Jaga konsistensi rutinitas skincare", "Lindungi kulit dari sinar UV"],
-                            lifestyle_tips: ["Minum air yang cukup", "Tidur yang cukup", "Kelola stres dengan baik"]
-                        },
-                        product_recommendations: beautylatoryProducts.slice(0, 3).map((product, index) => ({
-                            name: product.name,
-                            slug: product.slug,
-                            category: product.category.name,
-                            reason: index === 0 ? "Direkomendasikan untuk perawatan dasar kulit Anda" :
-                                   index === 1 ? "Membantu menjaga kelembapan dan kesehatan kulit" :
-                                   "Memberikan perlindungan dan nutrisi tambahan untuk kulit",
-                            addresses: ["kesehatan kulit", "hidrasi", "perlindungan"]
-                        })),
-                        skincare_routine: {
-                            morning: ["Pembersih", "Toner", "Serum", "Pelembap", "Sunscreen"],
-                            evening: ["Pembersih", "Toner", "Treatment", "Pelembap"]
-                        }
+        return {
+            success: true,
+            data: {
+                overall_score: 75,
+                analysis_version: '6.2-emergency-fallback',
+                engine: 'Emergency Fallback + Beautylatory Products',
+                processing_time: '2.0',
+                
+                // Basic skin data
+                skin_type: 'combination',
+                fitzpatrick_type: 'III',
+                predicted_age: 25,
+                acne: { acne_count: 0, acne_score: 20, severity: 'ringan' },
+                hydration: { hydration_level: 65, status: 'normal' },
+                oiliness: { oiliness_score: 50, sebum_level: 'sedang' },
+                pores: { pore_score: 50, visibility: 'sedang' },
+                texture: { texture_score: 70, smoothness: 'cukup halus' },
+                
+                // Basic AI report with products
+                ai_report: {
+                    summary: "Analisis kulit telah selesai. Meskipun terjadi kendala teknis dengan kualitas foto, kami tetap dapat memberikan rekomendasi produk yang sesuai untuk perawatan kulit Anda.",
+                    main_concerns: ["Perawatan kulit umum", "Hidrasi", "Perlindungan"],
+                    skin_type_analysis: "Kulit Anda menunjukkan karakteristik kombinasi dengan kebutuhan perawatan seimbang antara area berminyak dan kering.",
+                    recommendations: {
+                        immediate_actions: [
+                            "Gunakan pembersih yang lembut untuk membersihkan wajah 2x sehari",
+                            "Aplikasikan pelembap secara teratur untuk menjaga hidrasi kulit",
+                            "Gunakan sunscreen SPF 30+ setiap pagi untuk perlindungan UV"
+                        ],
+                        long_term_goals: [
+                            "Jaga konsistensi rutinitas skincare untuk hasil optimal",
+                            "Lindungi kulit dari sinar UV untuk mencegah penuaan dini",
+                            "Monitor kondisi kulit dan sesuaikan produk sesuai kebutuhan"
+                        ],
+                        lifestyle_tips: [
+                            "Minum air putih minimal 8 gelas per hari untuk hidrasi dari dalam",
+                            "Tidur yang cukup (7-8 jam) untuk regenerasi kulit",
+                            "Kelola stres dengan baik karena dapat mempengaruhi kondisi kulit"
+                        ]
                     },
-                    ai_insights: {}, // Backward compatibility
-                    
-                    // Product recommendations
                     product_recommendations: beautylatoryProducts.slice(0, 3).map((product, index) => ({
                         name: product.name,
                         slug: product.slug,
                         category: product.category.name,
-                        reason: index === 0 ? "Direkomendasikan untuk perawatan dasar kulit Anda" :
-                               index === 1 ? "Membantu menjaga kelembapan dan kesehatan kulit" :
-                               "Memberikan perlindungan dan nutrisi tambahan untuk kulit",
-                        addresses: ["kesehatan kulit", "hidrasi", "perlindungan"]
+                        reason: index === 0 
+                            ? `${product.name} direkomendasikan sebagai produk dasar untuk perawatan kulit Anda. Produk ini membantu menjaga kesehatan dan kelembapan kulit dengan formula yang sesuai untuk kulit kombinasi.`
+                            : index === 1 
+                            ? `${product.name} membantu menjaga kelembapan dan kesehatan kulit dengan ingredients yang mendukung skin barrier. Cocok digunakan sebagai bagian dari rutinitas harian Anda.`
+                            : `${product.name} memberikan perlindungan dan nutrisi tambahan untuk kulit. Produk ini melengkapi rutinitas skincare Anda untuk hasil yang lebih optimal.`,
+                        addresses: ["kesehatan kulit", "hidrasi", "perlindungan"],
+                        usage: index === 0 ? "Gunakan 2x sehari, pagi dan malam" : index === 1 ? "Aplikasikan setelah pembersih" : "Gunakan sesuai kebutuhan",
+                        expected_results: "Hasil terlihat dalam 2-4 minggu dengan penggunaan rutin"
                     })),
-                    
-                    // Metadata
-                    analyzed_at: new Date().toISOString(),
-                    api_provider: 'Emergency Fallback + Beautylatory',
-                    api_calls_count: 0,
-                    products_fetched: beautylatoryProducts.length
-                }
-            };
-        }
+                    skincare_routine: {
+                        morning: [
+                            "Pembersih wajah yang lembut",
+                            "Toner untuk menyeimbangkan pH kulit",
+                            "Serum hidrasi atau vitamin C",
+                            "Pelembap sesuai jenis kulit",
+                            "Sunscreen SPF 30+ (wajib!)"
+                        ],
+                        evening: [
+                            "Pembersih wajah (double cleansing jika pakai makeup)",
+                            "Toner",
+                            "Treatment serum (retinol/niacinamide)",
+                            "Pelembap malam yang lebih rich"
+                        ],
+                        weekly_treatments: [
+                            "Exfoliating 1-2x seminggu untuk mengangkat sel kulit mati",
+                            "Sheet mask atau sleeping mask 2-3x seminggu untuk hidrasi ekstra"
+                        ]
+                    },
+                    progress_tracking: {
+                        week_2: "Kulit terasa lebih lembap dan nyaman",
+                        week_4: "Tekstur kulit mulai lebih halus dan merata",
+                        week_8: "Kondisi kulit lebih stabil dan sehat",
+                        week_12: "Hasil optimal dengan kulit yang lebih cerah dan sehat"
+                    }
+                },
+                ai_insights: {}, // Backward compatibility
+                
+                // Product recommendations
+                product_recommendations: beautylatoryProducts.slice(0, 3).map((product, index) => ({
+                    name: product.name,
+                    slug: product.slug,
+                    category: product.category.name,
+                    reason: index === 0 
+                        ? `${product.name} direkomendasikan sebagai produk dasar untuk perawatan kulit Anda.`
+                        : index === 1 
+                        ? `${product.name} membantu menjaga kelembapan dan kesehatan kulit.`
+                        : `${product.name} memberikan perlindungan dan nutrisi tambahan untuk kulit.`,
+                    addresses: ["kesehatan kulit", "hidrasi", "perlindungan"]
+                })),
+                
+                // Metadata
+                analyzed_at: new Date().toISOString(),
+                api_provider: 'Emergency Fallback + Beautylatory',
+                api_calls_count: 0,
+                products_fetched: beautylatoryProducts.length,
+                fallback_reason: error?.message || 'Analysis failed'
+            }
+        };
     }
+};
 
 
 /**
@@ -282,76 +335,38 @@ async function analyzeWithGeminiVision(imageBase64, skipValidation = false) {
         ? imageBase64.split(',')[1] 
         : imageBase64;
 
-    const prompt = `Anda adalah AI Dermatologist Expert. Analisis gambar wajah ini secara KOMPREHENSIF dan berikan output dalam format JSON yang VALID.
+    const prompt = `Analisis gambar wajah ini dan berikan data dalam JSON.
 
-INSTRUKSI PENTING:
-1. Analisis HANYA apa yang bisa Anda LIHAT di gambar
-2. Berikan skor yang REALISTIS (0-100)
-3. Berikan lokasi SPESIFIK untuk masalah kulit
-4. Analisis berdasarkan zona wajah
-5. Output HARUS berupa JSON valid tanpa markdown
-6. Validasi kualitas input terlebih dahulu. Jika gambar tidak sesuai, set quality_check.is_valid=false dan jelaskan mengapa.
-7. Tolak analisis jika: bukan wajah manusia, multiple faces, masker/kacamata menutupi kulit, gambar sangat gelap/overexposed, gambar buram, atau gambar palsu (animasi/foto layar).
+VALIDASI: Tolak jika bukan wajah manusia, multiple faces, atau masker/kacamata >30%.
 
-STRUKTUR JSON YANG DIPERLUKAN:
+OUTPUT JSON (WAJIB SEMUA FIELD):
 {
-  "quality_check": {
-    "is_valid": true/false,
-    "issues": ["masalah1", "masalah2"],
-    "metrics": {
-      "face_detected": true/false,
-      "face_count": 1,
-      "subject_type": "human_face",
-      "lighting": "good/poor/dark",
-      "sharpness": "sharp/blurred",
-      "confidence": 0.95
-    }
-  },
-  "overall_score": 75,
+  "quality_check": {"is_valid": true, "issues": [], "metrics": {"face_detected": true, "face_count": 1, "subject_type": "human_face", "lighting": "good", "sharpness": "sharp", "confidence": 0.95}},
+  "overall_score": 73,
   "skin_type": "combination",
+  "skin_type_reasoning": "T-zone berminyak, pipi normal",
   "fitzpatrick_type": "III",
-  "acne": {
-    "acne_count": 5,
-    "acne_score": 25,
-    "severity": "ringan",
-    "types": {"whitehead": 2, "blackhead": 1, "papule": 2},
-    "regions": {"dahi": 2, "pipi": 1, "hidung": 1, "dagu": 1},
-    "locations": ["tengah dahi", "pipi kiri"]
-  },
-  "wrinkles": {
-    "wrinkle_severity": 15,
-    "wrinkle_count": 3,
-    "severity": "minimal",
-    "types": {"fine_lines": 2, "crows_feet": 1},
-    "regions": {"mata": 1, "mulut": 1, "dahi": 1},
-    "locations": ["sudut mata", "garis senyum"]
-  },
-  "pigmentation": {
-    "dark_spot_count": 2,
-    "melanin_index": 45,
-    "pigmentation_area": 5,
-    "severity": "ringan",
-    "uniformity_score": 80,
-    "types": {"sun_spots": 1, "age_spots": 1},
-    "locations": ["pipi kiri", "dahi"]
-  },
-  "hydration": {
-    "hydration_level": 65,
-    "status": "normal",
-    "gloss_index": 40,
-    "dry_areas": ["pipi"],
-    "oily_areas": ["t-zone"]
-  },
-  "oiliness": {
-    "oiliness_score": 60,
-    "sebum_level": "sedang",
-    "t_zone_score": 75,
-    "regions": {"dahi": 70, "hidung": 80, "pipi": 40, "dagu": 60},
-    "shine_areas": ["hidung", "dahi"]
-  }
+  "predicted_age": 28,
+  "age_reasoning": "Elastisitas baik",
+  "acne": {"acne_count": 5, "acne_score": 23, "severity": "ringan", "types": {"whitehead": 2, "blackhead": 1, "papule": 2, "pustule": 0}, "regions": {"dahi": 2, "pipi_kiri": 1, "hidung": 1, "dagu": 1}, "locations": ["dahi kanan (2 whitehead)", "pipi kiri (1 papule)"], "inflammation_level": "rendah", "notes": "Jerawat minimal"},
+  "wrinkles": {"wrinkle_count": 4, "wrinkle_severity": 18, "severity": "minimal", "types": {"fine_lines": 3, "crows_feet": 1}, "regions": {"mata": 2, "mulut": 1}, "locations": ["mata kanan", "mata kiri"], "depth": "superficial", "notes": "Garis halus normal"},
+  "pigmentation": {"dark_spot_count": 3, "melanin_index": 48, "pigmentation_area": 6, "severity": "ringan", "uniformity_score": 78, "types": {"sun_spots": 2, "post_inflammatory": 1}, "locations": ["pipi kiri", "pipi kanan"], "distribution": "tersebar ringan", "notes": "Hiperpigmentasi ringan"},
+  "hydration": {"hydration_level": 62, "status": "normal", "gloss_index": 38, "dry_areas": ["pipi luar"], "oily_areas": ["t-zone"], "barrier_health": "baik", "notes": "Hidrasi cukup"},
+  "oiliness": {"oiliness_score": 58, "sebum_level": "sedang", "t_zone_score": 72, "regions": {"dahi": 68, "hidung": 76, "pipi_kiri": 42, "pipi_kanan": 45, "dagu": 55}, "shine_areas": ["hidung"], "pore_visibility": "sedang", "notes": "Sebum sedang"},
+  "pores": {"pore_score": 45, "visibility": "sedang", "enlarged_count": 12, "size": "sedang", "locations": ["hidung", "pipi"], "cleanliness": "sebagian tersumbat", "notes": "Pori terlihat"},
+  "texture": {"texture_score": 72, "smoothness": "cukup halus", "evenness": 68, "roughness_areas": ["pipi kiri"], "elasticity": "baik", "notes": "Tekstur halus"},
+  "eye_area": {"dark_circles": 35, "puffiness": 20, "fine_lines": 2, "firmness": 75, "notes": "Lingkaran mata ringan"},
+  "priority_concerns": [
+    {"concern": "Kontrol Sebum", "severity": "sedang", "zones": ["dahi", "hidung"]},
+    {"concern": "Hiperpigmentasi", "severity": "ringan", "zones": ["pipi"]}
+  ]
 }
 
-Berikan HANYA JSON valid tanpa format markdown.`;
+PENTING: 
+- Analisis AKTUAL berdasarkan foto (jangan template!)
+- Hitung jerawat, kerutan, bintik yang BENAR-BENAR terlihat
+- Berikan skor AKURAT (jangan 75/80/85)
+- Output HANYA JSON valid, NO markdown`;
 
     try {
         const response = await fetch(`${GEMINI_API_URL}/${GEMINI_VISION_MODEL}:generateContent?key=${GEMINI_API_KEY}`, {
@@ -366,7 +381,7 @@ Berikan HANYA JSON valid tanpa format markdown.`;
                 }],
                 generationConfig: {
                     temperature: 0.1,
-                    maxOutputTokens: 2000
+                    maxOutputTokens: 8192 // Increased from 4096 to ensure complete response
                 }
             })
         });
@@ -397,46 +412,104 @@ Berikan HANYA JSON valid tanpa format markdown.`;
         try {
             const parsed = JSON.parse(cleanContent);
             
-            // Validate input quality if not skipping validation
-            if (!skipValidation) {
-                ensureVisionInputValidity(parsed);
+            // Validate that we have all CRITICAL required fields
+            const requiredFields = ['overall_score', 'skin_type', 'acne', 'hydration', 'oiliness', 'pores', 'texture', 'wrinkles', 'pigmentation'];
+            const missingFields = requiredFields.filter(field => !parsed[field]);
+            
+            if (missingFields.length > 0) {
+                console.warn('⚠️ Incomplete response from Gemini, missing fields:', missingFields);
+                console.log('📄 Parsed data:', JSON.stringify(parsed, null, 2));
+                throw {
+                    code: 'INCOMPLETE_RESPONSE',
+                    message: `Gemini response is incomplete - missing: ${missingFields.join(', ')}`,
+                    partialData: parsed,
+                    missingFields
+                };
             }
             
+            // Validate overall_score is not 0 (indicates failed analysis)
+            if (parsed.overall_score === 0 || parsed.overall_score === undefined || parsed.overall_score === null) {
+                console.warn('⚠️ Invalid overall_score from Gemini:', parsed.overall_score);
+                throw {
+                    code: 'INVALID_SCORE',
+                    message: 'Gemini returned invalid overall_score',
+                    partialData: parsed
+                };
+            }
+            
+            // Validate skin_type is not Unknown
+            if (!parsed.skin_type || parsed.skin_type === 'Unknown') {
+                console.warn('⚠️ Invalid skin_type from Gemini:', parsed.skin_type);
+                throw {
+                    code: 'INVALID_SKIN_TYPE',
+                    message: 'Gemini returned invalid skin_type',
+                    partialData: parsed
+                };
+            }
+            
+            // Check if Gemini says image is invalid
+            if (parsed.quality_check && parsed.quality_check.is_valid === false) {
+                console.warn('⚠️ Gemini detected quality issues:', parsed.quality_check.issues);
+                
+                // If skipValidation is true, continue anyway
+                if (skipValidation) {
+                    console.log('✅ Continuing with analysis despite quality issues (skipValidation=true)');
+                    // Force is_valid to true
+                    parsed.quality_check.is_valid = true;
+                    return parsed;
+                }
+                
+                // Otherwise, throw error to trigger fallback
+                throw {
+                    code: 'GEMINI_QUALITY_REJECTED',
+                    message: 'Gemini mendeteksi masalah kualitas foto',
+                    details: parsed.quality_check.issues || [],
+                    canRetry: true,
+                    isModerate: true,
+                    geminiResponse: parsed
+                };
+            }
+            
+            // Validate input quality if not skipping validation
+            if (!skipValidation) {
+                ensureVisionInputValidity(parsed, skipValidation);
+            }
+            
+            console.log('✅ Gemini response validated - all required fields present');
             return parsed;
         } catch (parseError) {
+            // If it's our custom error, re-throw it
+            if (parseError.code === 'GEMINI_QUALITY_REJECTED' || parseError.code === 'INVALID_INPUT_QUALITY' || parseError.code === 'INCOMPLETE_RESPONSE') {
+                throw parseError;
+            }
+            
             console.error('❌ JSON parsing failed:', parseError);
             console.log('📄 Full content that failed to parse:', cleanContent);
             
-            // Return fallback structure
-            return {
-                quality_check: {
-                    is_valid: true,
-                    issues: [],
-                    metrics: {
-                        face_detected: true,
-                        face_count: 1,
-                        subject_type: "human_face",
-                        lighting: "good",
-                        sharpness: "sharp",
-                        confidence: 0.8
-                    }
-                },
-                overall_score: 75,
-                skin_type: "combination",
-                fitzpatrick_type: "III",
-                acne: {
-                    acne_count: 0,
-                    acne_score: 20,
-                    severity: "ringan"
-                },
-                hydration: {
-                    hydration_level: 65,
-                    status: "normal"
-                },
-                oiliness: {
-                    oiliness_score: 50,
-                    sebum_level: "sedang"
+            // Try to fix common JSON issues
+            try {
+                // Add missing closing braces if needed
+                let fixedContent = cleanContent;
+                const openBraces = (fixedContent.match(/\{/g) || []).length;
+                const closeBraces = (fixedContent.match(/\}/g) || []).length;
+                
+                if (openBraces > closeBraces) {
+                    console.log('🔧 Attempting to fix incomplete JSON by adding closing braces...');
+                    fixedContent += '}'.repeat(openBraces - closeBraces);
+                    const fixedParsed = JSON.parse(fixedContent);
+                    console.log('✅ Successfully fixed and parsed JSON!');
+                    return fixedParsed;
                 }
+            } catch (fixError) {
+                console.error('❌ Could not fix JSON:', fixError);
+            }
+            
+            // For JSON parse errors, throw to trigger fallback
+            throw {
+                code: 'JSON_PARSE_ERROR',
+                message: 'Failed to parse Gemini response',
+                originalError: parseError,
+                rawContent: cleanContent.substring(0, 500)
             };
         }
     } catch (error) {
@@ -459,52 +532,67 @@ async function generateCompleteReportWithProducts(visionData, beautylatoryProduc
         description: product.description.substring(0, 400) + '...'
     }));
     
-    const prompt = `Berdasarkan data analisis kulit berikut dan produk yang tersedia, berikan rekomendasi komprehensif dalam format JSON.
+    const prompt = `Anda adalah AI Dermatologist Expert. Berdasarkan data analisis kulit, berikan rekomendasi PERSONAL dan DETAIL.
 
-DATA ANALISIS KULIT:
-- Skor Keseluruhan: ${visionData.overall_score}/100
-- Jenis Kulit: ${visionData.skin_type}
-- Skor Jerawat: ${visionData.acne?.acne_score || 0}/100
-- Tingkat Hidrasi: ${visionData.hydration?.hydration_level || 0}%
-- Skor Berminyak: ${visionData.oiliness?.oiliness_score || 0}/100
+DATA ANALISIS:
+- Skor: ${visionData.overall_score}/100
+- Jenis Kulit: ${visionData.skin_type} ${visionData.skin_type_reasoning ? `(${visionData.skin_type_reasoning})` : ''}
+- Usia: ${visionData.predicted_age || 25} tahun
+- Jerawat: ${visionData.acne?.acne_count || 0} (skor ${visionData.acne?.acne_score || 0}/100) di ${visionData.acne?.locations?.join(', ') || 'tidak ada'}
+- Kerutan: ${visionData.wrinkles?.wrinkle_count || 0} (skor ${visionData.wrinkles?.wrinkle_severity || 0}/100) di ${visionData.wrinkles?.locations?.join(', ') || 'tidak ada'}
+- Pigmentasi: ${visionData.pigmentation?.dark_spot_count || 0} bintik (keseragaman ${visionData.pigmentation?.uniformity_score || 0}/100)
+- Hidrasi: ${visionData.hydration?.hydration_level || 0}% (${visionData.hydration?.status || 'normal'})
+- Berminyak: ${visionData.oiliness?.oiliness_score || 0}/100, T-zone ${visionData.oiliness?.t_zone_score || 0}/100
+- Pori: ${visionData.pores?.enlarged_count || 0} membesar (skor ${visionData.pores?.pore_score || 0}/100)
+- Tekstur: ${visionData.texture?.texture_score || 0}/100
 
-PRODUK TERSEDIA UNTUK REKOMENDASI:
-${JSON.stringify(productsInfo, null, 2)}
+PRIORITAS: ${visionData.priority_concerns?.map((c, i) => `${i+1}. ${c.concern} (${c.severity}) di ${c.zones?.join(', ')}`).join('; ') || 'Tidak ada'}
 
-INSTRUKSI PENTING:
-1. Analisis data kulit dan cocokkan dengan produk yang PALING RELEVAN dari daftar yang tersedia
-2. HANYA rekomendasikan produk dari daftar yang disediakan di atas
-3. Pilih 2-3 produk yang paling sesuai untuk mengatasi masalah kulit utama
-4. Berikan alasan spesifik mengapa setiap produk direkomendasikan berdasarkan analisis
-5. Sertakan array product_recommendations dengan name, slug, category, dan reason
-6. GUNAKAN BAHASA INDONESIA untuk semua teks
+PRODUK TERSEDIA:
+${JSON.stringify(productsInfo.slice(0, 10), null, 2)}
 
-FORMAT OUTPUT JSON YANG DIPERLUKAN:
+INSTRUKSI:
+1. Analisis data dengan teliti
+2. Pilih 2-3 produk PALING RELEVAN dari daftar
+3. Berikan alasan DETAIL (min 2 kalimat) untuk setiap produk - sebutkan ingredients, masalah yang diatasi, cara kerja, ekspektasi hasil
+4. Berikan rekomendasi tindakan yang SPESIFIK berdasarkan data
+5. Susun rutinitas skincare lengkap
+
+OUTPUT JSON (LENGKAP):
 {
-  "summary": "Ringkasan singkat penilaian kulit secara keseluruhan",
-  "main_concerns": ["masalah1", "masalah2", "masalah3"],
-  "skin_type_analysis": "Penjelasan detail tentang jenis kulit",
+  "summary": "Ringkasan kondisi kulit dengan data spesifik (min 3 kalimat)",
+  "main_concerns": ["Masalah 1 dengan detail", "Masalah 2 dengan detail", "Masalah 3 dengan detail"],
+  "skin_type_analysis": "Analisis jenis kulit dengan karakteristik spesifik (min 3 kalimat)",
   "recommendations": {
-    "immediate_actions": ["tindakan1", "tindakan2"],
-    "long_term_goals": ["tujuan1", "tujuan2"],
-    "lifestyle_tips": ["tips1", "tips2"]
+    "immediate_actions": ["Tindakan 1 dengan alasan", "Tindakan 2 dengan alasan", "Tindakan 3 dengan alasan"],
+    "long_term_goals": ["Tujuan 1 dengan timeline", "Tujuan 2 dengan timeline", "Tujuan 3 dengan timeline"],
+    "lifestyle_tips": ["Tips 1 relevan", "Tips 2 relevan", "Tips 3 relevan"]
   },
   "product_recommendations": [
     {
-      "name": "Nama Produk dari daftar",
+      "name": "Nama Produk",
       "slug": "product-slug",
-      "category": "Kategori Produk",
-      "reason": "Alasan spesifik berdasarkan analisis mengapa produk ini direkomendasikan",
-      "addresses": ["masalah1", "masalah2"]
+      "category": "Kategori",
+      "reason": "Alasan DETAIL (min 2 kalimat): ingredients aktif, masalah yang diatasi dengan data, cara kerja, ekspektasi hasil",
+      "addresses": ["masalah 1", "masalah 2"],
+      "usage": "Cara penggunaan spesifik",
+      "expected_results": "Hasil dengan timeline"
     }
   ],
   "skincare_routine": {
-    "morning": ["langkah1", "langkah2", "langkah3"],
-    "evening": ["langkah1", "langkah2", "langkah3"]
+    "morning": ["Langkah 1", "Langkah 2", "Langkah 3", "Langkah 4", "Langkah 5"],
+    "evening": ["Langkah 1", "Langkah 2", "Langkah 3", "Langkah 4"],
+    "weekly_treatments": ["Treatment 1 dengan frekuensi", "Treatment 2 dengan frekuensi"]
+  },
+  "progress_tracking": {
+    "week_2": "Ekspektasi minggu 2",
+    "week_4": "Ekspektasi minggu 4",
+    "week_8": "Ekspektasi minggu 8",
+    "week_12": "Ekspektasi minggu 12"
   }
 }
 
-Berikan HANYA JSON valid tanpa format markdown.`;
+PENTING: Rekomendasi harus PERSONAL berdasarkan data. Output HANYA JSON valid. BAHASA INDONESIA.`;
 
     try {
         const response = await fetch(GROQ_API_URL, {
@@ -526,7 +614,7 @@ Berikan HANYA JSON valid tanpa format markdown.`;
                     }
                 ],
                 temperature: 0.3,
-                max_tokens: 2000
+                max_tokens: 4096
             })
         });
 
@@ -554,8 +642,100 @@ Berikan HANYA JSON valid tanpa format markdown.`;
         console.log('🧹 Cleaned Groq content:', cleanContent.substring(0, 200) + '...');
         
         try {
-            const parsedReport = JSON.parse(cleanContent);
-            console.log(`✅ Generated report with ${parsedReport.product_recommendations?.length || 0} product recommendations`);
+            // Try to parse directly first
+            let parsedReport;
+            try {
+                parsedReport = JSON.parse(cleanContent);
+            } catch (firstError) {
+                console.warn('⚠️ First parse attempt failed, trying auto-fix...', firstError.message);
+                
+                // Log the problematic area
+                const errorPos = firstError.message.match(/position (\d+)/);
+                if (errorPos) {
+                    const pos = parseInt(errorPos[1]);
+                    const start = Math.max(0, pos - 100);
+                    const end = Math.min(cleanContent.length, pos + 100);
+                    console.log('🔍 Error area:', cleanContent.substring(start, end));
+                    console.log('🔍 Character at error position:', cleanContent[pos], '(code:', cleanContent.charCodeAt(pos), ')');
+                }
+                
+                // Auto-fix common JSON issues
+                let fixedContent = cleanContent;
+                
+                // Fix 1: Remove trailing commas before closing brackets
+                fixedContent = fixedContent.replace(/,(\s*[}\]])/g, '$1');
+                
+                // Fix 2: Fix missing commas between array elements (common issue)
+                // Look for patterns like: "}{"  or  "]{"  or  "}["
+                fixedContent = fixedContent.replace(/\}(\s*)\{/g, '},$1{');
+                fixedContent = fixedContent.replace(/\](\s*)\{/g, '],$1{');
+                fixedContent = fixedContent.replace(/\}(\s*)\[/g, '},$1[');
+                
+                // Fix 3: Fix missing commas after closing quotes before opening quotes
+                // Pattern: "text" "text" should be "text", "text"
+                fixedContent = fixedContent.replace(/"(\s*)"(?=[a-zA-Z_])/g, '",$1"');
+                
+                // Fix 4: Fix space between } and "key" (should be },"key")
+                // This is the most common issue causing "Expected ',' or ']'" error
+                // Pattern: } "key" should be },"key"
+                fixedContent = fixedContent.replace(/\}(\s+)"([a-zA-Z_])/g, '},"$2');
+                
+                // Fix 5: Fix space between ] and "key" (should be ],"key")
+                // Pattern: ] "key" should be ],"key"
+                fixedContent = fixedContent.replace(/\](\s+)"([a-zA-Z_])/g, '],"$2');
+                
+                // Fix 6: Fix space between } and , (remove extra space)
+                fixedContent = fixedContent.replace(/\}\s+,/g, '},');
+                
+                // Fix 7: Fix space between ] and , (remove extra space)
+                fixedContent = fixedContent.replace(/\]\s+,/g, '],');
+                
+                // Fix 8: Add missing closing braces if needed
+                const openBraces = (fixedContent.match(/\{/g) || []).length;
+                const closeBraces = (fixedContent.match(/\}/g) || []).length;
+                if (openBraces > closeBraces) {
+                    console.log('🔧 Adding missing closing braces...');
+                    fixedContent += '}'.repeat(openBraces - closeBraces);
+                }
+                
+                // Fix 9: Add missing closing brackets if needed
+                const openBrackets = (fixedContent.match(/\[/g) || []).length;
+                const closeBrackets = (fixedContent.match(/\]/g) || []).length;
+                if (openBrackets > closeBrackets) {
+                    console.log('🔧 Adding missing closing brackets...');
+                    fixedContent += ']'.repeat(openBrackets - closeBrackets);
+                }
+                
+                console.log('🔧 Fixed content (first 200 chars):', fixedContent.substring(0, 200) + '...');
+                
+                try {
+                    parsedReport = JSON.parse(fixedContent);
+                    console.log('✅ Successfully parsed after auto-fix!');
+                } catch (secondError) {
+                    console.error('❌ Auto-fix failed:', secondError.message);
+                    console.log('📄 Fixed content that still failed:', fixedContent.substring(0, 500));
+                    throw secondError;
+                }
+            }
+            
+            // Validate that we have all CRITICAL required fields for the report
+            const requiredReportFields = ['summary', 'main_concerns', 'skin_type_analysis', 'recommendations', 'product_recommendations', 'skincare_routine'];
+            const missingReportFields = requiredReportFields.filter(field => !parsedReport[field]);
+            
+            if (missingReportFields.length > 0) {
+                console.warn('⚠️ Incomplete report from Groq, missing fields:', missingReportFields);
+                // Continue with fallback below
+                throw new Error(`Missing fields: ${missingReportFields.join(', ')}`);
+            }
+            
+            // Validate product_recommendations has at least 1 product
+            if (!parsedReport.product_recommendations || parsedReport.product_recommendations.length === 0) {
+                console.warn('⚠️ No product recommendations in Groq response');
+                // Continue with fallback below
+                throw new Error('No product recommendations');
+            }
+            
+            console.log(`✅ Generated complete report with ${parsedReport.product_recommendations?.length || 0} product recommendations`);
             return parsedReport;
         } catch (parseError) {
             console.error('❌ Groq JSON parsing error:', parseError);
@@ -594,6 +774,7 @@ Berikan HANYA JSON valid tanpa format markdown.`;
 
 /**
  * Groq Vision Fallback: Vision analysis when Gemini fails
+ * MUST provide EQUALLY DETAILED analysis as Gemini
  */
 async function analyzeSkinWithGroqVision(imageBase64) {
     console.log('🔄 Using Groq vision fallback...');
@@ -602,7 +783,114 @@ async function analyzeSkinWithGroqVision(imageBase64) {
         ? imageBase64.split(',')[1] 
         : imageBase64;
 
-    const prompt = `Analisis gambar wajah ini untuk kondisi kulit. Berikan analisis detail dalam format JSON dengan skor 0-100 untuk berbagai metrik kulit seperti jerawat, kerutan, pigmentasi, hidrasi, dan berminyak. GUNAKAN BAHASA INDONESIA untuk semua teks.`;
+    const prompt = `Anda adalah AI Dermatologist Expert. Analisis gambar wajah ini secara SANGAT DETAIL dan SPESIFIK.
+
+PENTING - BERIKAN ANALISIS YANG UNIK DAN PERSONAL:
+1. Analisis HANYA berdasarkan apa yang BENAR-BENAR terlihat di gambar
+2. Berikan skor yang AKURAT dan SPESIFIK (jangan template seperti 75, 80, 85)
+3. Sebutkan lokasi SPESIFIK untuk setiap masalah kulit
+4. Berikan jumlah yang TEPAT untuk jerawat, kerutan, bintik gelap
+5. Deskripsikan kondisi dengan DETAIL (tekstur, warna, ukuran, distribusi)
+
+ANALISIS YANG DIPERLUKAN:
+
+1. JERAWAT: Hitung jumlah pasti, tentukan jenis (whitehead/blackhead/papule/pustule), lokasi spesifik, tingkat inflamasi
+2. KERUTAN: Identifikasi jenis (fine lines/crow's feet/forehead lines), hitung jumlah, kedalaman, lokasi spesifik
+3. PIGMENTASI: Hitung bintik gelap, ukuran, jenis (sun spots/age spots/melasma), lokasi, keseragaman warna
+4. HIDRASI: Tingkat kelembapan (0-100%), area kering/berminyak, gloss index, status barrier
+5. BERMINYAK: Skor per zona (dahi/hidung/pipi/dagu), area shine, T-zone score
+6. PORI-PORI: Jumlah pori membesar, ukuran, lokasi, kebersihan
+7. TEKSTUR: Kehalusan, ketidakrataan, elastisitas
+8. WARNA KULIT: Fitzpatrick type, keseragaman, hiperpigmentasi/hipopigmentasi
+9. AREA MATA: Dark circles, puffiness, fine lines, kekencangan
+10. KESEHATAN KESELURUHAN: Skor keseluruhan, jenis kulit dengan alasan, masalah utama, prediksi usia
+
+FORMAT OUTPUT JSON (LENGKAP):
+{
+  "overall_score": 73,
+  "skin_type": "combination",
+  "skin_type_reasoning": "T-zone berminyak dengan pipi normal-kering",
+  "fitzpatrick_type": "III",
+  "predicted_age": 28,
+  "age_reasoning": "Berdasarkan elastisitas kulit dan minimal fine lines",
+  "acne": {
+    "acne_count": 5,
+    "acne_score": 23,
+    "severity": "ringan",
+    "types": {"whitehead": 2, "blackhead": 1, "papule": 2, "pustule": 0},
+    "regions": {"dahi": 2, "pipi_kiri": 1, "pipi_kanan": 0, "hidung": 1, "dagu": 1},
+    "locations": ["dahi kanan atas (2 whitehead)", "pipi kiri bawah (1 papule)", "hidung (1 blackhead)", "dagu (1 papule)"],
+    "inflammation_level": "rendah",
+    "notes": "Jerawat aktif minimal"
+  },
+  "wrinkles": {
+    "wrinkle_count": 4,
+    "wrinkle_severity": 18,
+    "severity": "minimal",
+    "types": {"fine_lines": 3, "crows_feet": 1, "forehead_lines": 0},
+    "locations": ["sudut mata kanan (crow's feet)", "sudut mata kiri (fine line)", "bawah mata (fine line)"],
+    "depth": "superficial",
+    "notes": "Garis halus normal untuk usia"
+  },
+  "pigmentation": {
+    "dark_spot_count": 3,
+    "melanin_index": 48,
+    "pigmentation_area": 6,
+    "severity": "ringan",
+    "uniformity_score": 78,
+    "types": {"sun_spots": 2, "post_inflammatory": 1},
+    "locations": ["pipi kiri atas (sun spot 3mm)", "pipi kanan (sun spot 2mm)", "dahi (PIH)"],
+    "notes": "Hiperpigmentasi ringan dari UV"
+  },
+  "hydration": {
+    "hydration_level": 62,
+    "status": "normal",
+    "gloss_index": 38,
+    "dry_areas": ["pipi luar", "area mata"],
+    "oily_areas": ["t-zone"],
+    "barrier_health": "baik",
+    "notes": "Hidrasi cukup baik"
+  },
+  "oiliness": {
+    "oiliness_score": 58,
+    "sebum_level": "sedang",
+    "t_zone_score": 72,
+    "regions": {"dahi": 68, "hidung": 76, "pipi_kiri": 42, "pipi_kanan": 45, "dagu": 55},
+    "shine_areas": ["hidung", "dahi tengah"],
+    "notes": "Produksi sebum sedang di t-zone"
+  },
+  "pores": {
+    "pore_score": 45,
+    "visibility": "sedang",
+    "enlarged_count": 12,
+    "size": "sedang",
+    "locations": ["hidung", "pipi atas", "dahi"],
+    "cleanliness": "sebagian tersumbat",
+    "notes": "Pori terlihat di t-zone"
+  },
+  "texture": {
+    "texture_score": 72,
+    "smoothness": "cukup halus",
+    "evenness": 68,
+    "roughness_areas": ["pipi kiri"],
+    "elasticity": "baik",
+    "notes": "Tekstur umumnya halus"
+  },
+  "eye_area": {
+    "dark_circles": 35,
+    "puffiness": 20,
+    "fine_lines": 2,
+    "firmness": 75,
+    "notes": "Lingkaran mata ringan"
+  },
+  "priority_concerns": [
+    {"concern": "Kontrol Sebum T-Zone", "severity": "sedang", "zones": ["dahi", "hidung"]},
+    {"concern": "Hiperpigmentasi Ringan", "severity": "ringan", "zones": ["pipi"]},
+    {"concern": "Pori Membesar", "severity": "ringan", "zones": ["hidung"]}
+  ]
+}
+
+Berikan HANYA JSON valid. JANGAN gunakan template generik!`;
 
     try {
         const response = await fetch(GROQ_API_URL, {

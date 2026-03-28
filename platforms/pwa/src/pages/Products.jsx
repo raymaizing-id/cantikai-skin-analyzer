@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2 } from 'lucide-react';
+import BottomNav from '../components/BottomNav';
 
 const Products = () => {
     const navigate = useNavigate();
@@ -122,7 +123,7 @@ const Products = () => {
             </div>
 
             {/* Products Grid - 2 cards per row */}
-            <div style={{ padding: '20px' }}>
+            <div style={{ padding: '20px 20px 140px' }}>
                 <div style={{ 
                     display: 'grid', 
                     gridTemplateColumns: 'repeat(2, 1fr)', 
@@ -330,6 +331,7 @@ const Products = () => {
                     </div>
                 )}
             </div>
+            <BottomNav />
         </div>
     );
 };

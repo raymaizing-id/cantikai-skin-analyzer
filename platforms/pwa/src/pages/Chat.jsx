@@ -106,6 +106,17 @@ const Chat = () => {
     const messagesEndRef = useRef(null);
     const initialMessageProcessed = useRef(false);
     const recognitionRef = useRef(null);
+    
+    // Store doctor context in state to persist across renders
+    const [doctorContext, setDoctorContext] = useState(null);
+    
+    // Initialize doctor context from location state
+    useEffect(() => {
+        if (location.state?.doctorContext && !doctorContext) {
+            console.log('🩺 Setting doctor context:', location.state.doctorContext);
+            setDoctorContext(location.state.doctorContext);
+        }
+    }, [location.state?.doctorContext]);
 
     // Get or create unique user ID - UNIFIED with other pages
     const getUserId = () => {
@@ -162,29 +173,68 @@ const Chat = () => {
             setIsListening(true);
         }
     };
-
-    const quickActions = [
-        { 
-            icon: Sparkles, 
-            description: 'Yuk, kenali kesehatan kulitmu! Mari saya bantu analisis kondisi kulit wajahmu',
-            prompt: 'Analisis Kulit Saya'
-        },
-        { 
-            icon: Lightbulb, 
-            description: 'Butuh panduan perawatan harian? Saya siap berbagi tips skincare untukmu',
-            prompt: 'Tips Skincare Harian'
-        },
-        { 
-            icon: TrendingUp, 
-            description: 'Bingung pilih produk? Mari saya rekomendasikan produk terbaik untukmu',
-            prompt: 'Rekomendasi Produk'
-        },
-        { 
-            icon: Calendar, 
-            description: 'Ingin rutinitas skincare teratur? Saya bantu susun jadwal perawatanmu',
-            prompt: 'Routine Skincare'
+    
+    // Dynamic quick actions based on context
+    const getQuickActions = () => {
+        if (doctorContext) {
+            // Doctor-specific quick actions - PATIENT COMPLAINTS
+            const specialty = doctorContext.specialty.toLowerCase();
+            
+            if (specialty.includes('dermatologist')) {
+                return [
+                    { icon: Sparkles, description: 'Saya punya jerawat yang tidak kunjung sembuh', prompt: 'Saya punya jerawat yang tidak kunjung sembuh, sudah coba berbagai produk tapi tidak membaik' },
+                    { icon: Lightbulb, description: 'Kulit saya berminyak dan berkomedo', prompt: 'Kulit saya sangat berminyak dan banyak komedo, bagaimana cara mengatasinya?' },
+                    { icon: TrendingUp, description: 'Saya punya flek hitam di wajah', prompt: 'Saya punya flek hitam/melasma di wajah, bisa dibantu?' },
+                    { icon: Calendar, description: 'Kulit saya mulai keriput dan kendur', prompt: 'Kulit saya mulai keriput dan kendur, ada treatment anti-aging yang cocok?' }
+                ];
+            } else if (specialty.includes('general physician')) {
+                return [
+                    { icon: Sparkles, description: 'Kulit saya kusam dan tidak bercahaya', prompt: 'Kulit saya kusam dan tidak bercahaya, padahal sudah pakai skincare' },
+                    { icon: Lightbulb, description: 'Jerawat saya muncul saat stress', prompt: 'Jerawat saya selalu muncul saat stress atau kurang tidur' },
+                    { icon: TrendingUp, description: 'Makanan apa yang baik untuk kulit?', prompt: 'Makanan atau suplemen apa yang baik untuk kesehatan kulit?' },
+                    { icon: Calendar, description: 'Kulit saya sensitif dan mudah iritasi', prompt: 'Kulit saya sensitif dan mudah iritasi, apa penyebabnya?' }
+                ];
+            } else if (specialty.includes('cardiologist')) {
+                return [
+                    { icon: Sparkles, description: 'Kulit saya sering pucat dan dingin', prompt: 'Kulit saya sering terlihat pucat dan terasa dingin, terutama di ujung jari' },
+                    { icon: Lightbulb, description: 'Luka saya lambat sembuh', prompt: 'Luka di kulit saya lambat sembuh, apa hubungannya dengan sirkulasi?' },
+                    { icon: TrendingUp, description: 'Obat jantung saya bikin kulit kering', prompt: 'Sejak minum obat jantung, kulit saya jadi sangat kering' },
+                    { icon: Calendar, description: 'Kulit saya kebiruan di beberapa area', prompt: 'Kulit saya terlihat kebiruan di beberapa area, apa artinya?' }
+                ];
+            } else if (specialty.includes('physician')) {
+                return [
+                    { icon: Sparkles, description: 'Kulit saya bermasalah terus-menerus', prompt: 'Kulit saya bermasalah terus-menerus, tidak sembuh-sembuh' },
+                    { icon: Lightbulb, description: 'Stress saya mempengaruhi kulit', prompt: 'Stress dan kurang tidur sangat mempengaruhi kulit saya' },
+                    { icon: TrendingUp, description: 'Lifestyle apa yang harus saya ubah?', prompt: 'Lifestyle apa yang harus saya ubah untuk kulit lebih sehat?' },
+                    { icon: Calendar, description: 'Saya ingin pendekatan holistik', prompt: 'Saya ingin pendekatan holistik untuk masalah kulit saya' }
+                ];
+            } else if (specialty.includes('arthropathic') || specialty.includes('rheumat')) {
+                return [
+                    { icon: Sparkles, description: 'Kulit saya bersisik dan menebal', prompt: 'Kulit saya bersisik dan menebal, terutama di siku dan lutut' },
+                    { icon: Lightbulb, description: 'Saya punya ruam yang tidak sembuh', prompt: 'Saya punya ruam yang tidak kunjung sembuh, kadang disertai nyeri sendi' },
+                    { icon: TrendingUp, description: 'Kulit saya mengeras dan kaku', prompt: 'Kulit saya terasa mengeras dan kaku, apa ini scleroderma?' },
+                    { icon: Calendar, description: 'Saya punya riwayat lupus/psoriasis', prompt: 'Saya punya riwayat lupus/psoriasis, kulit saya sering bermasalah' }
+                ];
+            } else if (specialty.includes('endocrin')) {
+                return [
+                    { icon: Sparkles, description: 'Jerawat saya muncul di rahang/dagu', prompt: 'Jerawat saya selalu muncul di area rahang dan dagu, apa ini hormonal?' },
+                    { icon: Lightbulb, description: 'Saya punya PCOS dan kulit berminyak', prompt: 'Saya punya PCOS, kulit saya sangat berminyak dan berjerawat' },
+                    { icon: TrendingUp, description: 'Rambut wajah saya tumbuh berlebih', prompt: 'Rambut di wajah saya tumbuh berlebih (hirsutism), bisa dibantu?' },
+                    { icon: Calendar, description: 'Kulit saya berubah saat menopause', prompt: 'Kulit saya berubah drastis sejak menopause, jadi sangat kering' }
+                ];
+            }
         }
-    ];
+        
+        // Default Cantik AI quick actions
+        return [
+            { icon: Sparkles, description: 'Yuk, kenali kesehatan kulitmu! Mari saya bantu analisis kondisi kulit wajahmu', prompt: 'Analisis Kulit Saya' },
+            { icon: Lightbulb, description: 'Butuh panduan perawatan harian? Saya siap berbagi tips skincare untukmu', prompt: 'Tips Skincare Harian' },
+            { icon: TrendingUp, description: 'Bingung pilih produk? Mari saya rekomendasikan produk terbaik untukmu', prompt: 'Rekomendasi Produk' },
+            { icon: Calendar, description: 'Ingin rutinitas skincare teratur? Saya bantu susun jadwal perawatanmu', prompt: 'Routine Skincare' }
+        ];
+    };
+
+    const quickActions = getQuickActions();
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -194,7 +244,7 @@ const Chat = () => {
         scrollToBottom();
     }, [messages]);
 
-    // Load user's chat sessions from database
+    // Load user's chat sessions from database on mount
     useEffect(() => {
         // Always fetch banners
         fetchBanners();
@@ -639,6 +689,10 @@ const Chat = () => {
         try {
             const currentMode = CHAT_MODES[chatMode];
             
+            // Get doctor context from location state (if coming from doctor detail page)
+            // Use the stored doctorContext state instead of location.state
+            const currentDoctorContext = doctorContext;
+            
             // Check if user is asking for product recommendations
             const lastUserMessage = conversationHistory[conversationHistory.length - 1];
             const isProductRequest = lastUserMessage && lastUserMessage.role === 'user' && 
@@ -655,7 +709,76 @@ const Chat = () => {
             let productData = null;
             let systemMessage = {
                 role: 'system',
-                content: `Anda adalah Cantik AI, asisten dermatologi pribadi yang ramah dan profesional. Anda membantu pengguna dengan:
+                content: ''
+            };
+
+            // Build system message based on context
+            if (currentDoctorContext) {
+                // DOCTOR ASSISTANT MODE
+                console.log('👨‍⚕️ Doctor context detected:', {
+                    name: currentDoctorContext.name,
+                    specialty: currentDoctorContext.specialty,
+                    experience: currentDoctorContext.experience_years,
+                    hasKnowledge: !!currentDoctorContext.assistant_knowledge
+                });
+                
+                if (currentDoctorContext.assistant_knowledge) {
+                    // Use full knowledge base if available
+                    console.log('✅ Using full assistant_knowledge from database');
+                    systemMessage.content = currentDoctorContext.assistant_knowledge;
+                } else {
+                    // Fallback: Build comprehensive doctor context
+                    console.log('⚠️ No assistant_knowledge, using fallback');
+                    systemMessage.content = `Anda adalah ${currentDoctorContext.name}, seorang ${currentDoctorContext.specialty} dengan ${currentDoctorContext.experience_years} tahun pengalaman.
+
+🎓 TENTANG ANDA:
+${currentDoctorContext.bio || 'Dokter berpengalaman dalam bidang Anda.'}
+
+💡 PERAN ANDA:
+Anda adalah DOKTER SUNGGUHAN yang sedang berkonsultasi dengan pasien. Anda HARUS:
+- Berperan sebagai ${currentDoctorContext.name} sendiri (gunakan "Saya" bukan "Dr. ${currentDoctorContext.name}")
+- Mendengarkan keluhan pasien dengan empati
+- Memberikan diagnosis dan saran berdasarkan keahlian ${currentDoctorContext.specialty}
+- Menjelaskan kondisi dengan bahasa yang mudah dipahami
+- Merekomendasikan treatment yang tepat
+- JANGAN PERNAH bilang "saya tidak tahu" - Anda adalah expert!
+
+📋 INFORMASI ANDA:
+- Spesialisasi: ${currentDoctorContext.specialty}
+- Pengalaman: ${currentDoctorContext.experience_years} tahun
+- Biaya konsultasi tatap muka: Rp ${Number(currentDoctorContext.price_per_session || 0).toLocaleString('id-ID')} per sesi
+
+🎯 CARA BERKONSULTASI:
+1. Dengarkan keluhan pasien dengan seksama
+2. Tanyakan detail gejala jika perlu
+3. Berikan diagnosis awal berdasarkan gejala
+4. Jelaskan kondisi dan penyebabnya
+5. Rekomendasikan treatment/perawatan
+6. Berikan tips preventif
+7. Ajak booking konsultasi tatap muka jika diperlukan pemeriksaan lebih lanjut
+
+⚠️ ATURAN PENTING:
+- Gunakan "Saya" untuk merujuk diri Anda (bukan "Dr. ${currentDoctorContext.name}")
+- Berikan jawaban medis yang informatif dan akurat
+- Tunjukkan empati dan profesionalisme
+- Jika perlu pemeriksaan fisik, ajak pasien booking konsultasi tatap muka
+- Format jawaban dengan markdown untuk readability
+
+Berikan jawaban dalam Bahasa Indonesia yang natural, ramah, dan profesional.`;
+                }
+                
+                // Add instruction to never say "I don't know"
+                systemMessage.content += `
+
+⚠️ REMINDER:
+- Anda adalah ${currentDoctorContext.name}, BUKAN asisten
+- Gunakan "Saya" untuk merujuk diri Anda
+- Berikan konsultasi medis yang profesional
+- Jika perlu pemeriksaan fisik, ajak booking konsultasi tatap muka`;
+                
+            } else {
+                // DEFAULT CANTIK AI MODE
+                systemMessage.content = `Anda adalah Cantik AI, asisten dermatologi pribadi yang ramah dan profesional. Anda membantu pengguna dengan:
 - Analisis kondisi kulit
 - Rekomendasi produk skincare
 - Tips perawatan kulit harian
@@ -668,8 +791,8 @@ Format jawaban dengan markdown untuk readability:
 - Gunakan bullet points (- ) untuk list items
 - Gunakan emoji 🌸 sesekali untuk membuat percakapan lebih hangat
 
-Jaga jawaban tetap concise dan to the point.`
-            };
+Jaga jawaban tetap concise dan to the point.`;
+            }
 
             // Handle DERMON product requests
             if (isDermonProductRequest) {
@@ -992,13 +1115,14 @@ Respons AI: "${lastAiResponse.substring(0, 600)}"`
         if (location.state?.initialMessage && !initialMessageProcessed.current && !isLoading) {
             initialMessageProcessed.current = true;
             const message = location.state.initialMessage;
+            const doctorCtx = location.state.doctorContext; // Preserve doctor context
             
             console.log('📝 Sending initial message');
             // Send message (will create session automatically if needed)
             handleSendMessage(message);
             
-            // Clear the state
-            navigate(location.pathname, { replace: true, state: {} });
+            // Clear the initialMessage but keep doctorContext
+            navigate(location.pathname, { replace: true, state: { doctorContext: doctorCtx } });
         }
     }, [location.state, isLoading]);
 
@@ -1057,10 +1181,10 @@ Respons AI: "${lastAiResponse.substring(0, 600)}"`
                     </div>
                     <div style={{ flex: 1 }}>
                         <h2 className="headline" style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-headline)', marginBottom: '2px', fontFamily: 'var(--font-serif)' }}>
-                            cantik.ai 
+                            {doctorContext ? doctorContext.name : 'cantik.ai'}
                         </h2>
                         <p style={{ fontSize: '0.7rem', color: 'var(--text-body)', fontFamily: 'var(--font-sans)' }}>
-                            ai dermatologi assistant
+                            {doctorContext ? `${doctorContext.specialty} • ${doctorContext.experience_years} tahun pengalaman` : 'ai dermatologi assistant'}
                         </p>
                     </div>
                     <div 
@@ -1481,10 +1605,14 @@ Respons AI: "${lastAiResponse.substring(0, 600)}"`
                                 maxWidth: '500px'
                             }}>
                                 <h3 className="headline" style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--text-headline)', marginBottom: '10px', fontFamily: 'var(--font-serif)' }}>
-                                    Halo! Ada yang bisa saya bantu?
+                                    {doctorContext 
+                                        ? `Halo! Saya ${doctorContext.name}` 
+                                        : 'Halo! Ada yang bisa saya bantu?'}
                                 </h3>
                                 <p style={{ fontSize: '0.9rem', color: 'var(--text-body)', fontFamily: 'var(--font-sans)', lineHeight: 1.5 }}>
-                                    Tanyakan apa saja tentang perawatan kulit Anda
+                                    {doctorContext 
+                                        ? `Ceritakan keluhan kulit Anda. Saya siap membantu dengan keahlian saya di bidang ${doctorContext.specialty}` 
+                                        : 'Tanyakan apa saja tentang perawatan kulit Anda'}
                                 </p>
                             </div>
                         </div>

@@ -57,9 +57,14 @@ app.use(cors({
     return callback(null, true);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  credentials: true // Penting jika Anda menggunakan cookies/session
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-admin-csrf-token'],
+  credentials: true,
+  exposedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// Middleware untuk parse JSON body
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
@@ -69,6 +74,10 @@ const KIOSK_RESULT_TOKEN_EXPIRES_DAYS = Math.max(1, Math.min(365, Number.parseIn
 const WHATSAPP_WEBHOOK_URL = String(process.env.WHATSAPP_WEBHOOK_URL || '').trim();
 const WHATSAPP_WEBHOOK_SECRET = String(process.env.WHATSAPP_WEBHOOK_SECRET || '').trim();
 const UPLOADS_ROOT_PATH = path.resolve(__dirname, '..', 'uploads');
+
+// Serve static files from uploads directory (AFTER UPLOADS_ROOT_PATH is defined)
+app.use('/uploads', express.static(UPLOADS_ROOT_PATH));
+console.log('📁 Static files served from:', UPLOADS_ROOT_PATH);
 
 // Test MySQL connection on startup
 testConnection();
@@ -188,6 +197,21 @@ const ADMIN_CSRF_HEADER = 'x-admin-csrf-token';
 const UNSAFE_HTTP_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const adminLoginRateTracker = new Map();
 const adminLoginFailureTracker = new Map();
+
+// Admin allowed origins - allow localhost and common development ports
+const ADMIN_ALLOWED_ORIGINS = new Set([
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:8080',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:8080'
+]);
+
+const isAllowedOrigin = (origin) => {
+    if (!ADMIN_ENFORCE_ORIGIN) return true;
+    return ADMIN_ALLOWED_ORIGINS.has(origin);
+};
 
 const getClientIp = (req) => {
     const forwarded = String(req.headers['x-forwarded-for'] || '')
@@ -1999,7 +2023,7 @@ app.put('/api/v2/users/:id', requireAuthenticatedUser, async (req, res) => {
             return res.status(403).json({ error: 'Forbidden' });
         }
 
-        const { name, age, gender, skin_type, password } = req.body;
+        const { name, age, gender, skin_type, password, photo_url } = req.body;
         
         const updates = [];
         const values = [];
@@ -2009,7 +2033,6 @@ app.put('/api/v2/users/:id', requireAuthenticatedUser, async (req, res) => {
             values.push(name); 
         }
         if (age !== undefined) { 
-            // Handle empty string or invalid age values
             let ageValue = null;
             if (age !== '' && age !== null && !isNaN(Number(age))) {
                 ageValue = Number(age);
@@ -2018,7 +2041,6 @@ app.put('/api/v2/users/:id', requireAuthenticatedUser, async (req, res) => {
             values.push(ageValue); 
         }
         if (gender !== undefined) { 
-            // Handle empty string for gender
             const genderValue = (gender === '' || gender === null) ? null : gender;
             updates.push('gender = ?'); 
             values.push(genderValue); 
@@ -2026,6 +2048,13 @@ app.put('/api/v2/users/:id', requireAuthenticatedUser, async (req, res) => {
         if (skin_type !== undefined && skin_type !== '') { 
             updates.push('skin_type = ?'); 
             values.push(skin_type); 
+        }
+        if (photo_url !== undefined) {
+            updates.push('photo_url = ?');
+            values.push(photo_url || null);
+            // Also update avatar_url for consistency
+            updates.push('avatar_url = ?');
+            values.push(photo_url || null);
         }
         if (password !== undefined) {
             updates.push('password = ?');
@@ -2630,6 +2659,362 @@ app.delete('/api/v2/chat/sessions/:id', async (req, res) => {
         res.json({ message: 'Chat session deleted successfully' });
     } catch (error) {
         console.error('Delete chat session error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== DOCTOR ENDPOINTS ====================
+
+// Get all active doctors
+app.get('/api/v2/doctors', async (req, res) => {
+    try {
+        const doctors = await dbAll(`
+            SELECT id, name, specialization as specialty, rating, experience_years, 
+                   photo_url, bio, available_days as schedule
+            FROM doctors 
+            WHERE is_active = 1 
+            ORDER BY rating DESC
+        `);
+        
+        // Parse JSON fields - handle MySQL auto-parsed JSON
+        doctors.forEach(doctor => {
+            if (doctor.schedule) {
+                try {
+                    doctor.schedule = typeof doctor.schedule === 'string' ? JSON.parse(doctor.schedule) : doctor.schedule;
+                } catch (e) {
+                    doctor.schedule = [];
+                }
+            } else {
+                doctor.schedule = [];
+            }
+        });
+        
+        res.json(doctors);
+    } catch (error) {
+        console.error('Get doctors error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get doctor by ID
+app.get('/api/v2/doctors/:id', async (req, res) => {
+    try {
+        const doctor = await dbGet(`
+            SELECT id, name, specialization as specialty, rating, experience_years,
+                   photo_url, bio, education as location, available_days as schedule,
+                   available_hours, price_per_session, review_count, assistant_knowledge
+            FROM doctors 
+            WHERE id = ? AND is_active = 1
+        `, [req.params.id]);
+        
+        if (!doctor) {
+            return res.status(404).json({ error: 'Doctor not found' });
+        }
+        
+        // Parse JSON fields - handle both string and already-parsed array (MySQL JSON type)
+        if (doctor.schedule) {
+            try {
+                doctor.schedule = typeof doctor.schedule === 'string' ? JSON.parse(doctor.schedule) : doctor.schedule;
+            } catch (e) {
+                doctor.schedule = [];
+            }
+        } else {
+            doctor.schedule = [];
+        }
+        
+        if (doctor.available_hours) {
+            try {
+                doctor.available_hours = typeof doctor.available_hours === 'string' ? JSON.parse(doctor.available_hours) : doctor.available_hours;
+            } catch (e) {
+                doctor.available_hours = [];
+            }
+        } else {
+            doctor.available_hours = [];
+        }
+        
+        // Get reviews
+        const reviews = await dbAll(`
+            SELECT dr.rating, dr.review_text as comment, 
+                   COALESCE(u.name, u.email) as user_name, dr.created_at
+            FROM doctor_reviews dr
+            LEFT JOIN users u ON dr.user_id = u.id
+            WHERE dr.doctor_id = ?
+            ORDER BY dr.created_at DESC
+            LIMIT 10
+        `, [req.params.id]);
+        
+        doctor.reviews = reviews;
+        
+        res.json(doctor);
+    } catch (error) {
+        console.error('Get doctor detail error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get doctor availability for a specific date
+app.get('/api/v2/doctors/:id/availability', async (req, res) => {
+    try {
+        const { date } = req.query;
+        const doctor = await dbGet(
+            'SELECT available_hours, available_days FROM doctors WHERE id = ? AND is_active = 1',
+            [req.params.id]
+        );
+        if (!doctor) return res.status(404).json({ error: 'Doctor not found' });
+
+        let timeSlots = [];
+        let availableDays = [];
+        try { timeSlots = JSON.parse(doctor.available_hours || '[]'); } catch { timeSlots = []; }
+        try { availableDays = JSON.parse(doctor.available_days || '[]'); } catch { availableDays = []; }
+
+        // Check if selected date falls on an available day
+        let availableSlots = [];
+        if (date) {
+            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const dayOfWeek = dayNames[new Date(date + 'T00:00:00').getDay()];
+            const isDayAvailable = availableDays.length === 0 || availableDays.includes(dayOfWeek);
+
+            if (isDayAvailable) {
+                const bookedAppointments = await dbAll(
+                    `SELECT appointment_time FROM doctor_appointments WHERE doctor_id = ? AND appointment_date = ? AND status != 'cancelled'`,
+                    [req.params.id, date]
+                );
+                const bookedTimes = bookedAppointments.map(a => a.appointment_time.substring(0, 5));
+                availableSlots = timeSlots.filter(t => !bookedTimes.includes(t));
+            }
+        }
+
+        res.json({ date, available_days: availableDays, available_slots: availableSlots });
+    } catch (error) {
+        console.error('Get doctor availability error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Book appointment - REQUEST BASED (no slot check needed)
+app.post('/api/v2/doctors/:id/appointments', async (req, res) => {
+    try {
+        const { user_id, preferred_date, complaint } = req.body;
+        
+        if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+        
+        const doctor = await dbGet('SELECT id, name FROM doctors WHERE id = ? AND is_active = 1', [req.params.id]);
+        if (!doctor) return res.status(404).json({ error: 'Doctor not found' });
+        
+        // Sanitize all values - no undefined allowed
+        const apptUserId = Number(user_id);
+        const apptDoctorId = Number(req.params.id);
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const apptDate = (preferred_date && typeof preferred_date === 'string') ? preferred_date : tomorrow.toISOString().split('T')[0];
+        const apptTime = '09:00';
+        const apptComplaint = (complaint && typeof complaint === 'string') ? complaint : '';
+        
+        console.log('📅 Booking appointment:', { apptUserId, apptDoctorId, apptDate, apptTime, apptComplaint: apptComplaint.substring(0, 30) });
+        
+        const result = await dbRun(
+            'INSERT INTO doctor_appointments (user_id, doctor_id, appointment_date, appointment_time, complaint, status) VALUES (?, ?, ?, ?, ?, ?)',
+            [apptUserId, apptDoctorId, apptDate, apptTime, apptComplaint, 'pending']
+        );
+        
+        const newId = result.lastID;
+        console.log('✅ Appointment created with id:', newId);
+        
+        const appointment = await dbGet(
+            'SELECT da.*, d.name as doctor_name, d.specialization as specialty FROM doctor_appointments da JOIN doctors d ON da.doctor_id = d.id WHERE da.id = ?',
+            [newId]
+        );
+        
+        res.json(appointment || { id: newId, status: 'pending', doctor_name: doctor.name });
+    } catch (error) {
+        console.error('Book appointment error:', error.message, error.stack);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get user appointments
+app.get('/api/v2/users/:userId/appointments', async (req, res) => {
+    try {
+        const appointments = await dbAll(`
+            SELECT da.*, d.name as doctor_name, d.specialization as specialty
+            FROM doctor_appointments da
+            JOIN doctors d ON da.doctor_id = d.id
+            WHERE da.user_id = ?
+            ORDER BY da.appointment_date DESC, da.appointment_time DESC
+        `, [req.params.userId]);
+        
+        res.json(appointments);
+    } catch (error) {
+        console.error('Get user appointments error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Cancel appointment
+app.put('/api/v2/appointments/:id/cancel', async (req, res) => {
+    try {
+        await dbRun(`
+            UPDATE doctor_appointments 
+            SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `, [req.params.id]);
+        
+        res.json({ success: true, message: 'Appointment cancelled successfully' });
+    } catch (error) {
+        console.error('Cancel appointment error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Add doctor review
+app.post('/api/v2/doctors/:id/reviews', async (req, res) => {
+    try {
+        const { user_id, appointment_id, rating, review_text } = req.body;
+        
+        // Validate rating
+        if (rating < 1 || rating > 5) {
+            return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+        }
+        
+        const result = await dbRun(`
+            INSERT INTO doctor_reviews (user_id, doctor_id, appointment_id, rating, review_text)
+            VALUES (?, ?, ?, ?, ?)
+        `, [user_id, req.params.id, appointment_id || null, rating, review_text || '']);
+        
+        // Update doctor rating
+        const avgRating = await dbGet(`
+            SELECT AVG(rating) as avg_rating, COUNT(*) as review_count
+            FROM doctor_reviews
+            WHERE doctor_id = ?
+        `, [req.params.id]);
+        
+        await dbRun(`
+            UPDATE doctors
+            SET rating = ?, review_count = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `, [Math.round(avgRating.avg_rating * 10) / 10, avgRating.review_count, req.params.id]);
+        
+        const review = await dbGet('SELECT * FROM doctor_reviews WHERE id = ?', [result.lastID]);
+        
+        res.json(review);
+    } catch (error) {
+        console.error('Add doctor review error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== ADMIN DOCTOR ENDPOINTS ====================
+
+// GET all doctors (admin - includes inactive)
+app.get('/api/v2/admin/doctors', requireAdminAuth, async (req, res) => {
+    try {
+        const doctors = await dbAll(`
+            SELECT id, name, specialization, rating, review_count, experience_years,
+                   price_per_session, photo_url, bio, education,
+                   available_days, available_hours, assistant_knowledge, is_active, created_at, updated_at
+            FROM doctors ORDER BY id ASC
+        `);
+        doctors.forEach(d => {
+            try { d.available_days = Array.isArray(d.available_days) ? d.available_days : (d.available_days ? JSON.parse(d.available_days) : []); } catch { d.available_days = []; }
+            try { d.available_hours = Array.isArray(d.available_hours) ? d.available_hours : (d.available_hours ? JSON.parse(d.available_hours) : []); } catch { d.available_hours = []; }
+        });
+        res.json(doctors);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST create doctor (admin)
+app.post('/api/v2/admin/doctors', requireAdminAuth, async (req, res) => {
+    try {
+        const { name, specialization, bio, education, experience_years, price_per_session, photo_url, available_days, available_hours, assistant_knowledge, is_active } = req.body;
+        if (!name || !specialization) return res.status(400).json({ error: 'name and specialization are required' });
+        
+        // Auto-generate assistant_knowledge if not provided
+        const defaultKnowledge = assistant_knowledge || `Saya adalah asisten AI untuk ${name}, seorang ${specialization}. ${bio || ''} Saya dapat membantu Anda dengan informasi tentang layanan dokter ini, menjawab pertanyaan umum seputar ${specialization}, dan membantu Anda memutuskan apakah konsultasi dengan dokter ini sesuai untuk kebutuhan Anda.`;
+        
+        const result = await dbRun(`
+            INSERT INTO doctors (name, specialization, bio, education, experience_years, price_per_session, photo_url, available_days, available_hours, assistant_knowledge, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [name, specialization, bio || '', education || '', Number(experience_years) || 0, Number(price_per_session) || 0, photo_url || '', available_days || '[]', available_hours || '[]', defaultKnowledge, is_active !== false ? 1 : 0]);
+        const doctor = await dbGet('SELECT * FROM doctors WHERE id = ?', [result.lastID]);
+        res.status(201).json(doctor);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// PUT update doctor (admin)
+app.put('/api/v2/admin/doctors/:id', requireAdminAuth, async (req, res) => {
+    try {
+        const { name, specialization, bio, education, experience_years, price_per_session, photo_url, available_days, available_hours, assistant_knowledge, is_active } = req.body;
+        await dbRun(`
+            UPDATE doctors SET name=?, specialization=?, bio=?, education=?, experience_years=?,
+            price_per_session=?, photo_url=?, available_days=?, available_hours=?, assistant_knowledge=?, is_active=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+        `, [name, specialization, bio || '', education || '', Number(experience_years) || 0, Number(price_per_session) || 0, photo_url || '', available_days || '[]', available_hours || '[]', assistant_knowledge || '', is_active !== false ? 1 : 0, req.params.id]);
+        const doctor = await dbGet('SELECT * FROM doctors WHERE id = ?', [req.params.id]);
+        if (!doctor) return res.status(404).json({ error: 'Doctor not found' });
+        res.json(doctor);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// DELETE doctor (admin)
+app.delete('/api/v2/admin/doctors/:id', requireAdminAuth, async (req, res) => {
+    try {
+        const doctor = await dbGet('SELECT id FROM doctors WHERE id = ?', [req.params.id]);
+        if (!doctor) return res.status(404).json({ error: 'Doctor not found' });
+        await dbRun('DELETE FROM doctors WHERE id = ?', [req.params.id]);
+        res.json({ success: true, message: 'Doctor deleted' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== ADMIN APPOINTMENT ENDPOINTS ====================
+
+// GET all appointments (admin)
+app.get('/api/v2/admin/appointments', requireAdminAuth, async (req, res) => {
+    try {
+        const appointments = await dbAll(`
+            SELECT da.*, 
+                   d.name as doctor_name, d.specialization as specialty,
+                   COALESCE(u.name, u.email) as user_name, u.email as user_email
+            FROM doctor_appointments da
+            JOIN doctors d ON da.doctor_id = d.id
+            LEFT JOIN users u ON da.user_id = u.id
+            ORDER BY da.created_at DESC
+        `);
+        res.json(appointments);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// PUT update appointment status + schedule (admin)
+app.put('/api/v2/admin/appointments/:id', requireAdminAuth, async (req, res) => {
+    try {
+        const { status, appointment_date, appointment_time, admin_notes } = req.body;
+        await dbRun(`
+            UPDATE doctor_appointments 
+            SET status = COALESCE(?, status),
+                appointment_date = COALESCE(?, appointment_date),
+                appointment_time = COALESCE(?, appointment_time),
+                admin_notes = COALESCE(?, admin_notes),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `, [status || null, appointment_date || null, appointment_time || null, admin_notes || null, req.params.id]);
+        const appt = await dbGet(`
+            SELECT da.*, d.name as doctor_name, COALESCE(u.name, u.email) as user_name
+            FROM doctor_appointments da
+            JOIN doctors d ON da.doctor_id = d.id
+            LEFT JOIN users u ON da.user_id = u.id
+            WHERE da.id = ?
+        `, [req.params.id]);
+        res.json(appt);
+    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });

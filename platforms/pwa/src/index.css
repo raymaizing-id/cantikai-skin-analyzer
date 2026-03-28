@@ -46,11 +46,22 @@ body {
   justify-content: center;
 }
 
+/* Admin pages should not center content */
+body:has([data-admin-page]) {
+  justify-content: flex-start !important;
+}
+
 #root {
   width: 100%;
   max-width: 600px;
   display: flex;
   flex-direction: column;
+}
+
+/* Admin pages should be full width */
+#root:has([class*="admin"]),
+body:has([data-admin-page]) #root {
+  max-width: 100% !important;
 }
 
 @keyframes etherealFade {
@@ -204,4 +215,15 @@ body {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+
+/* Loading Spinner Animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }

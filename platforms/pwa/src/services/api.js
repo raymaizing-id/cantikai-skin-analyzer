@@ -259,6 +259,30 @@ class ApiService {
         });
     }
 
+    async getAdminDoctors() {
+        return this.request('/api/v2/admin/doctors');
+    }
+
+    async createAdminDoctor(data) {
+        return this.request('/api/v2/admin/doctors', { method: 'POST', body: JSON.stringify(data) });
+    }
+
+    async updateAdminDoctor(id, data) {
+        return this.request(`/api/v2/admin/doctors/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    }
+
+    async deleteAdminDoctor(id) {
+        return this.request(`/api/v2/admin/doctors/${id}`, { method: 'DELETE' });
+    }
+
+    async getAdminAppointments() {
+        return this.request('/api/v2/admin/appointments');
+    }
+
+    async updateAdminAppointment(id, data) {
+        return this.request(`/api/v2/admin/appointments/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    }
+
     async getAdminProducts() {
         return this.request('/api/v2/admin/products');
     }

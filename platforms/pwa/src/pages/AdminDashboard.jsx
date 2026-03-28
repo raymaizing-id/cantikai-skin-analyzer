@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation, Routes, Route } from 'react-router-dom';
 import {
     Users,
     Activity,
@@ -13,7 +13,9 @@ import {
     BarChart3,
     MessageSquare,
     Palette,
-    ScanLine
+    ScanLine,
+    UserCheck,
+    Calendar
 } from 'lucide-react';
 import apiService from '../services/api';
 import UsersManagement from '../components/admin/UsersManagement';
@@ -26,6 +28,8 @@ import KioskSessionsManagement from '../components/admin/KioskSessionsManagement
 import DesignSystemManagement from '../components/admin/DesignSystemManagement';
 import DatabaseManagement from '../components/admin/DatabaseManagement';
 import SettingsManagement from '../components/admin/SettingsManagement';
+import DoctorsManagement from '../components/admin/DoctorsManagement';
+import AppointmentsManagement from '../components/admin/AppointmentsManagement';
 const ADMIN_DATA_CHANGED_EVENT = 'cantik:admin-data-changed';
 
 const cardStyle = {
@@ -40,10 +44,12 @@ const cardStyle = {
 
 const AdminDashboard = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const [stats, setStats] = useState({
         total_users: 0,
         total_analyses: 0,
         total_products: 0,
+        total_doctors: 0,
         total_articles: 0,
         total_banners: 0,
         total_chat_sessions: 0,
@@ -53,7 +59,19 @@ const AdminDashboard = () => {
     });
     const [recentActivity, setRecentActivity] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('overview');
+    
+    // Get current tab from URL
+    const getCurrentTab = () => {
+        const path = location.pathname.replace('/admin/dashboard', '').replace('/', '');
+        return path || 'overview';
+    };
+    
+    const [activeTab, setActiveTab] = useState(getCurrentTab());
+    
+    // Update activeTab when URL changes
+    useEffect(() => {
+        setActiveTab(getCurrentTab());
+    }, [location.pathname]);
 
     const isAdminLoggedIn = () => {
         return Boolean(localStorage.getItem('admin_logged_in') || localStorage.getItem('cantik_admin_token'));
@@ -61,14 +79,15 @@ const AdminDashboard = () => {
 
     const fetchDashboardData = async () => {
         try {
-            const [users, analyses, products, articles, banners, chatSessions, kioskSessions] = await Promise.all([
+            const [users, analyses, products, articles, banners, chatSessions, kioskSessions, doctors] = await Promise.all([
                 apiService.getAllUsers(),
                 apiService.getAllAnalyses(),
                 apiService.getAdminProducts(),
                 apiService.getAdminArticles(),
                 apiService.getAdminBanners(),
                 apiService.getAdminChatSessions(),
-                apiService.getAdminKioskSessions()
+                apiService.getAdminKioskSessions(),
+                apiService.getAdminDoctors().catch(() => [])
             ]);
 
             const safeUsers = Array.isArray(users) ? users : [];
@@ -78,6 +97,7 @@ const AdminDashboard = () => {
             const safeBanners = Array.isArray(banners) ? banners : [];
             const safeSessions = Array.isArray(chatSessions) ? chatSessions : [];
             const safeKioskSessions = Array.isArray(kioskSessions) ? kioskSessions : [];
+            const safeDoctors = Array.isArray(doctors) ? doctors : [];
 
             const now = new Date();
             const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -90,6 +110,7 @@ const AdminDashboard = () => {
                 total_users: safeUsers.length,
                 total_analyses: safeAnalyses.length,
                 total_products: safeProducts.length,
+                total_doctors: safeDoctors.length,
                 total_articles: safeArticles.length,
                 total_banners: safeBanners.length,
                 total_chat_sessions: safeSessions.length,
@@ -185,7 +206,10 @@ const AdminDashboard = () => {
 
     const MenuItem = ({ icon: Icon, label, tab, badge }) => (
         <button
-            onClick={() => setActiveTab(tab)}
+            onClick={() => {
+                setActiveTab(tab);
+                navigate(`/admin/dashboard/${tab === 'overview' ? '' : tab}`);
+            }}
             style={{
                 width: '100%',
                 padding: '12px 20px',
@@ -287,6 +311,8 @@ const AdminDashboard = () => {
         if (activeTab === 'users') return <UsersManagement />;
         if (activeTab === 'analyses') return <AnalysesManagement />;
         if (activeTab === 'products') return <ProductsManagement />;
+        if (activeTab === 'doctors') return <DoctorsManagement />;
+        if (activeTab === 'appointments') return <AppointmentsManagement />;
         if (activeTab === 'articles') return <ArticlesManagement />;
         if (activeTab === 'banners') return <BannersManagement />;
         if (activeTab === 'chat') return <ChatSessionsManagement />;
@@ -300,6 +326,7 @@ const AdminDashboard = () => {
     if (loading) {
         return (
             <div
+                data-admin-page="true"
                 style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -315,9 +342,13 @@ const AdminDashboard = () => {
 
     return (
         <div
+            data-admin-page="true"
             style={{
                 display: 'flex',
                 minHeight: '100vh',
+                width: '100vw',
+                margin: 0,
+                padding: 0,
                 background: 'var(--bg-color)',
                 backgroundImage: `
                     radial-gradient(circle at 80% 0%, rgba(241, 211, 226, 0.4) 0%, transparent 40%),
@@ -330,12 +361,16 @@ const AdminDashboard = () => {
             <div
                 style={{
                     width: '280px',
+                    minWidth: '280px',
                     background: 'rgba(255, 255, 255, 0.75)',
                     backdropFilter: 'blur(25px)',
                     WebkitBackdropFilter: 'blur(25px)',
                     borderRight: '1px solid rgba(157, 90, 118, 0.1)',
                     display: 'flex',
-                    flexDirection: 'column'
+                    flexDirection: 'column',
+                    height: '100vh',
+                    position: 'sticky',
+                    top: 0
                 }}
             >
                 <div style={{ padding: '24px 20px', borderBottom: '1px solid rgba(157, 90, 118, 0.1)' }}>
@@ -350,6 +385,8 @@ const AdminDashboard = () => {
                     <MenuItem icon={Users} label="Users" tab="users" badge={stats.total_users} />
                     <MenuItem icon={Activity} label="Analyses" tab="analyses" badge={stats.total_analyses} />
                     <MenuItem icon={Package} label="Products" tab="products" badge={stats.total_products} />
+                    <MenuItem icon={UserCheck} label="Doctors" tab="doctors" badge={stats.total_doctors} />
+                    <MenuItem icon={Calendar} label="Appointments" tab="appointments" />
                     <MenuItem icon={FileText} label="Articles" tab="articles" badge={stats.total_articles} />
                     <MenuItem icon={Image} label="Banners" tab="banners" badge={stats.total_banners} />
                     <MenuItem icon={MessageSquare} label="Chat Sessions" tab="chat" badge={stats.total_chat_sessions} />
@@ -384,7 +421,7 @@ const AdminDashboard = () => {
                 </div>
             </div>
 
-            <div style={{ flex: 1, padding: '30px', overflowY: 'auto' }}>
+            <div style={{ flex: 1, padding: '30px 40px', overflowY: 'auto', width: '100%', maxWidth: '100%' }}>
                 <div style={{ marginBottom: '24px' }}>
                     <h1 style={{ fontSize: '2rem', fontWeight: 600, color: 'var(--text-headline)', marginBottom: '8px', fontFamily: 'var(--font-serif)' }}>
                         {activeTab === 'overview' ? 'Dashboard Overview' : `${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Management`}

@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Sparkles } from 'lucide-react';
 import StatusIndicators from '../components/scanner/StatusIndicators';
 import OvalFrame from '../components/scanner/OvalFrame';
 import ControlButtons from '../components/scanner/ControlButtons';
@@ -827,80 +827,206 @@ const ScannerEnhanced = () => {
                 />
             )}
 
-            {/* Photo Preview Modal */}
+            {/* Photo Preview Modal - RESPONSIVE & BEAUTIFUL */}
             {capturedImage && (
                 <div style={{
-                    position: 'absolute',
+                    position: 'fixed',
                     top: 0,
                     left: 0,
                     width: '100%',
                     height: '100%',
-                    background: 'rgba(0,0,0,0.95)',
+                    background: 'linear-gradient(135deg, #f1d3e2 0%, #c084a0 50%, #9d5a76 100%)',
                     zIndex: 100,
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '20px'
+                    justifyContent: 'space-between',
+                    padding: '0',
+                    overflow: 'hidden'
                 }}>
-                    <h2 style={{ color: 'white', marginBottom: '20px', fontFamily: 'var(--font-sans)' }}>
-                        Preview Foto
-                    </h2>
-                    <img 
-                        src={capturedImage} 
-                        alt="Preview" 
-                        style={{
-                            maxWidth: '90%',
-                            maxHeight: '60vh',
-                            borderRadius: '20px',
-                            marginBottom: '30px'
-                        }}
-                    />
-                    {(hasGlasses || hasFilter) && (
-                        <div style={{
-                            background: 'rgba(255, 190, 215, 0.2)',
-                            padding: '12px 20px',
-                            borderRadius: '12px',
-                            marginBottom: '20px',
-                            border: '1px solid rgba(255, 190, 215, 0.4)'
+                    {/* Header */}
+                    <div style={{
+                        width: '100%',
+                        padding: '20px',
+                        background: 'rgba(0,0,0,0.3)',
+                        backdropFilter: 'blur(10px)',
+                        textAlign: 'center'
+                    }}>
+                        <h2 style={{ 
+                            color: 'white', 
+                            margin: 0,
+                            fontSize: 'clamp(1.2rem, 5vw, 1.5rem)',
+                            fontWeight: 700,
+                            fontFamily: 'var(--font-display)',
+                            textShadow: '0 2px 10px rgba(0,0,0,0.3)'
                         }}>
-                            <p style={{ color: 'white', fontSize: '0.85rem', fontFamily: 'var(--font-sans)', textAlign: 'center' }}>
-                                ⚠️ {hasGlasses && 'Kacamata'}{hasGlasses && hasFilter && ' dan '}{hasFilter && 'Filter'} terdeteksi - dapat mempengaruhi hasil analisis
-                            </p>
+                            Preview Foto
+                        </h2>
+                        <p style={{
+                            color: 'rgba(255,255,255,0.9)',
+                            fontSize: 'clamp(0.8rem, 3vw, 0.9rem)',
+                            margin: '4px 0 0 0',
+                            fontFamily: 'var(--font-sans)'
+                        }}>
+                            Pastikan wajah terlihat jelas
+                        </p>
+                    </div>
+
+                    {/* Image Container - RESPONSIVE */}
+                    <div style={{
+                        flex: 1,
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '20px',
+                        position: 'relative'
+                    }}>
+                        <div style={{
+                            position: 'relative',
+                            width: '100%',
+                            maxWidth: '500px',
+                            aspectRatio: '3/4',
+                            borderRadius: '24px',
+                            overflow: 'hidden',
+                            boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+                            border: '3px solid rgba(255,255,255,0.2)'
+                        }}>
+                            <img 
+                                src={capturedImage} 
+                                alt="Preview" 
+                                style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'cover',
+                                    display: 'block'
+                                }}
+                            />
+                            
+                            {/* Quality Indicators Overlay */}
+                            {(hasGlasses || hasFilter) && (
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '16px',
+                                    left: '16px',
+                                    right: '16px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '8px'
+                                }}>
+                                    {hasGlasses && (
+                                        <div style={{
+                                            background: 'rgba(239, 68, 68, 0.95)',
+                                            padding: '8px 12px',
+                                            borderRadius: '12px',
+                                            backdropFilter: 'blur(10px)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                                        }}>
+                                            <AlertCircle size={16} color="white" />
+                                            <span style={{
+                                                color: 'white',
+                                                fontSize: 'clamp(0.75rem, 3vw, 0.85rem)',
+                                                fontWeight: 600,
+                                                fontFamily: 'var(--font-sans)'
+                                            }}>
+                                                Kacamata terdeteksi
+                                            </span>
+                                        </div>
+                                    )}
+                                    {hasFilter && (
+                                        <div style={{
+                                            background: 'rgba(239, 68, 68, 0.95)',
+                                            padding: '8px 12px',
+                                            borderRadius: '12px',
+                                            backdropFilter: 'blur(10px)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                                        }}>
+                                            <AlertCircle size={16} color="white" />
+                                            <span style={{
+                                                color: 'white',
+                                                fontSize: 'clamp(0.75rem, 3vw, 0.85rem)',
+                                                fontWeight: 600,
+                                                fontFamily: 'var(--font-sans)'
+                                            }}>
+                                                Filter terdeteksi
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
-                    )}
-                    <div style={{ display: 'flex', gap: '16px' }}>
-                        <button
-                            onClick={retakePhoto}
-                            style={{
-                                padding: '14px 32px',
-                                borderRadius: '30px',
-                                border: '2px solid white',
-                                background: 'transparent',
-                                color: 'white',
-                                fontSize: '1rem',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                fontFamily: 'var(--font-sans)'
-                            }}
-                        >
-                            Ulangi
-                        </button>
+                    </div>
+
+                    {/* Action Buttons - RESPONSIVE */}
+                    <div style={{
+                        width: '100%',
+                        padding: '20px',
+                        background: 'rgba(0,0,0,0.3)',
+                        backdropFilter: 'blur(10px)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        maxWidth: '500px',
+                        margin: '0 auto'
+                    }}>
                         <button
                             onClick={confirmCapture}
                             style={{
-                                padding: '14px 32px',
-                                borderRadius: '30px',
+                                width: '100%',
+                                padding: 'clamp(14px, 4vw, 18px)',
+                                borderRadius: '16px',
                                 border: 'none',
-                                background: 'var(--primary-color)',
+                                background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
                                 color: 'white',
-                                fontSize: '1rem',
+                                fontSize: 'clamp(0.95rem, 4vw, 1.1rem)',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                fontFamily: 'var(--font-sans)',
+                                boxShadow: '0 8px 24px rgba(245, 87, 108, 0.4)',
+                                transition: 'all 0.3s ease',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px'
+                            }}
+                            onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                            onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                        >
+                            <Sparkles size={20} />
+                            Lanjutkan Analisis
+                        </button>
+                        <button
+                            onClick={retakePhoto}
+                            style={{
+                                width: '100%',
+                                padding: 'clamp(14px, 4vw, 18px)',
+                                borderRadius: '16px',
+                                border: '2px solid rgba(255,255,255,0.3)',
+                                background: 'rgba(255,255,255,0.1)',
+                                color: 'white',
+                                fontSize: 'clamp(0.95rem, 4vw, 1.1rem)',
                                 fontWeight: 600,
                                 cursor: 'pointer',
-                                fontFamily: 'var(--font-sans)'
+                                fontFamily: 'var(--font-sans)',
+                                backdropFilter: 'blur(10px)',
+                                transition: 'all 0.3s ease'
+                            }}
+                            onMouseOver={(e) => {
+                                e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
+                                e.currentTarget.style.transform = 'translateY(-2px)';
+                            }}
+                            onMouseOut={(e) => {
+                                e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                                e.currentTarget.style.transform = 'translateY(0)';
                             }}
                         >
-                            Lanjutkan Analisis
+                            🔄 Ulangi Foto
                         </button>
                     </div>
                 </div>

@@ -15,6 +15,9 @@ import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import Chat from './pages/Chat';
 import Login from './pages/Login';
+import Doctors from './pages/Doctors';
+import DoctorDetail from './pages/DoctorDetail';
+import DoctorBooking from './pages/DoctorBooking';
 import ProtectedRoute from './components/ProtectedRoute';
 import { cleanOldTokens } from './utils/tokenSystem';
 import apiService from './services/api';
@@ -56,6 +59,15 @@ function App() {
         <Route path="/education/:id" element={<ArticleDetail />} />
         <Route path="/settings" element={<Settings />} />
         
+        {/* Doctor Routes */}
+        <Route path="/doctors" element={<Doctors />} />
+        <Route path="/doctors/:id" element={<DoctorDetail />} />
+        <Route path="/doctors/:id/booking" element={
+          <ProtectedRoute>
+            <DoctorBooking />
+          </ProtectedRoute>
+        } />
+        
         {/* Protected Routes - Require Login */}
         <Route path="/profile" element={
           <ProtectedRoute>
@@ -75,7 +87,7 @@ function App() {
         
         {/* Admin Routes */}
         <Route path="/admin" element={<AdminLogin />} />
-        <Route path="/admin/dashboard" element={<AdminDashboard />} />
+        <Route path="/admin/dashboard/*" element={<AdminDashboard />} />
       </Routes>
     </Router>
   );

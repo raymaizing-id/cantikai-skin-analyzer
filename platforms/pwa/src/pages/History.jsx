@@ -83,7 +83,9 @@ const History = () => {
                 fitzpatrick_type: analysis.fitzpatrick_type || 'III',
                 analysis_version: analysis.analysis_version || 'N/A',
                 engine: analysis.engine || 'AI Analysis',
-                created_at: analysis.created_at
+                created_at: analysis.created_at,
+                image_url: analysis.image_url || '', // Add image URL
+                visualization_url: analysis.visualization_url || '' // Add visualization URL
             }));
             
             // Sort by date (newest first)
@@ -173,11 +175,19 @@ const History = () => {
                     ...analysis.cv_metrics
                 };
                 
+                // Convert file path to full URL for image display
+                const imageUrl = analysis.image_url 
+                    ? `${import.meta.env.VITE_BACKEND_URL}${analysis.image_url}`
+                    : null;
+                
+                console.log('📸 Image URL for detail view:', imageUrl);
+                
                 // Navigate to result page with analysis data
                 navigate('/result', { 
                     state: { 
                         fromHistory: true,
-                        imageBase64: analysis.image_url,
+                        imageBase64: imageUrl, // Use full URL instead of base64
+                        imageUrl: imageUrl, // Also pass as imageUrl for clarity
                         resultData: analysisData,
                         aiInsights: analysis.ai_insights,
                         analysisEngine: analysis.engine || 'AI Analysis'
@@ -326,37 +336,59 @@ const History = () => {
                                 style={{ padding: '20px', position: 'relative' }}
                             >
                                 <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                                    {/* Score Circle */}
+                                    {/* Photo Thumbnail */}
                                     <div
                                         style={{
                                             width: 80,
                                             height: 80,
-                                            borderRadius: '50%',
-                                            background: `conic-gradient(${getScoreColor(analysis.overall_score)} ${analysis.overall_score * 3.6}deg, rgba(157, 143, 166, 0.2) 0deg)`,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            flexShrink: 0
+                                            borderRadius: '16px',
+                                            overflow: 'hidden',
+                                            flexShrink: 0,
+                                            background: 'linear-gradient(135deg, rgba(157, 90, 118, 0.1), rgba(192, 132, 160, 0.1))',
+                                            border: '2px solid rgba(157, 90, 118, 0.2)',
+                                            position: 'relative'
                                         }}
                                     >
+                                        {analysis.image_url ? (
+                                            <img
+                                                src={`${import.meta.env.VITE_BACKEND_URL}${analysis.image_url}`}
+                                                alt="Foto Analisis"
+                                                style={{
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    objectFit: 'cover'
+                                                }}
+                                                onError={(e) => {
+                                                    // Fallback if image fails to load
+                                                    e.target.style.display = 'none';
+                                                    e.target.parentElement.innerHTML = `
+                                                        <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 2rem;">
+                                                            📸
+                                                        </div>
+                                                    `;
+                                                }}
+                                            />
+                                        ) : (
+                                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem' }}>
+                                                📸
+                                            </div>
+                                        )}
+                                        {/* Score Badge Overlay */}
                                         <div
                                             style={{
-                                                width: 64,
-                                                height: 64,
-                                                borderRadius: '50%',
-                                                background: 'white',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                flexDirection: 'column'
+                                                position: 'absolute',
+                                                bottom: 4,
+                                                right: 4,
+                                                background: getScoreColor(analysis.overall_score),
+                                                color: 'white',
+                                                padding: '4px 8px',
+                                                borderRadius: '8px',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 700,
+                                                boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
                                             }}
                                         >
-                                            <span style={{ fontSize: '1.5rem', fontWeight: 700, color: getScoreColor(analysis.overall_score) }}>
-                                                {analysis.overall_score}
-                                            </span>
-                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-body)' }}>
-                                                {getScoreLabel(analysis.overall_score)}
-                                            </span>
+                                            {analysis.overall_score}
                                         </div>
                                     </div>
 
@@ -380,6 +412,24 @@ const History = () => {
                                                 <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-headline)' }}>
                                                     {analysis.skin_type || 'Normal'}
                                                 </p>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '12px' }}>
+                                                <div>
+                                                    <p style={{ fontSize: '0.7rem', color: 'var(--text-body)', marginBottom: '2px' }}>
+                                                        Skor
+                                                    </p>
+                                                    <p style={{ fontSize: '0.85rem', fontWeight: 600, color: getScoreColor(analysis.overall_score) }}>
+                                                        {getScoreLabel(analysis.overall_score)}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p style={{ fontSize: '0.7rem', color: 'var(--text-body)', marginBottom: '2px' }}>
+                                                        Usia Prediksi
+                                                    </p>
+                                                    <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-headline)' }}>
+                                                        {analysis.predicted_age} tahun
+                                                    </p>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
