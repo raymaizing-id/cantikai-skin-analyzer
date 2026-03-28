@@ -1,4 +1,5 @@
-const GEMINI_API_KEY = 'AIzaSyCLPaSFmDJRPV6VUcVd7KPDZUwzVXpuQWc';
+require('dotenv').config({ path: '../backend/.env' });
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 console.log('🔍 Fetching available Gemini models...\n');
 

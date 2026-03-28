@@ -1,6 +1,13 @@
-const GEMINI_API_KEY = 'AIzaSyCLPaSFmDJRPV6VUcVd7KPDZUwzVXpuQWc';
+const fs = require('fs');
+const envPath = require('path').join(__dirname, '../backend/.env');
+const envVars = Object.fromEntries(
+    fs.readFileSync(envPath, 'utf8').split('\n')
+        .filter(l => l.includes('=') && !l.startsWith('#'))
+        .map(l => l.split('=').map(s => s.trim()))
+);
+const GEMINI_API_KEY = envVars.GEMINI_API_KEY;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models';
-const GEMINI_VISION_MODEL = 'gemini-1.5-flash';
+const GEMINI_VISION_MODEL = 'gemini-2.0-flash';
 
 console.log('🧪 Testing Gemini API with model:', GEMINI_VISION_MODEL);
 
