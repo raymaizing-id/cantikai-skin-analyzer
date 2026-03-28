@@ -198,15 +198,18 @@ const UNSAFE_HTTP_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const adminLoginRateTracker = new Map();
 const adminLoginFailureTracker = new Map();
 
-// Admin allowed origins - allow localhost and common development ports
-const ADMIN_ALLOWED_ORIGINS = new Set([
+// Admin allowed origins - from env + localhost defaults
+const _adminOriginDefaults = [
     'http://localhost:5173',
     'http://localhost:3000',
     'http://localhost:8080',
     'http://127.0.0.1:5173',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:8080'
-]);
+];
+const _adminOriginFromEnv = (process.env.ADMIN_ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+const ADMIN_ALLOWED_ORIGINS = new Set([..._adminOriginDefaults, ..._adminOriginFromEnv]);
 
 const isAllowedOrigin = (origin) => {
     if (!ADMIN_ENFORCE_ORIGIN) return true;
